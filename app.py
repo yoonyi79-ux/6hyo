@@ -243,7 +243,7 @@ def call_gemini(uploaded_file, question: str, api_key: str) -> str:
     )
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-1.5-flash",
         contents=[image, user_text],
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
