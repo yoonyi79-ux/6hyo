@@ -247,7 +247,7 @@ def call_gemini(uploaded_file, question: str, api_key: str) -> str:
         contents=[image, user_text],
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
         ),
     )
     return response.text
