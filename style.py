@@ -63,33 +63,9 @@ header[data-testid="stHeader"] {
   border-bottom: 2px solid var(--border) !important;
 }
 
-/* 헤더 우상단 툴바 아이콘 버튼 가시성 */
-[data-testid="stToolbar"] button,
-header[data-testid="stHeader"] button {
-  color: var(--head) !important;
-  background: transparent !important;
-  border-radius: var(--r-sm) !important;
-  transition: background 0.15s, box-shadow 0.15s !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-[data-testid="stToolbar"] button:hover,
-header[data-testid="stHeader"] button:hover {
-  background: var(--bg-ter) !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-[data-testid="stToolbar"] button:active,
-header[data-testid="stHeader"] button:active {
-  background: var(--bg-ter) !important;
-  transform: none !important;
-  box-shadow: none !important;
-}
-[data-testid="stToolbar"] svg,
-header[data-testid="stHeader"] svg {
-  fill: var(--head) !important;
-  color: var(--head) !important;
-  stroke: var(--head) !important;
+/* 헤더 우상단 툴바 전체 숨김 */
+[data-testid="stToolbar"] {
+  display: none !important;
 }
 
 /* ══════════════════════════════════════

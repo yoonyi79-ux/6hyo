@@ -16,6 +16,11 @@ st.set_page_config(
     page_title="육효의 세계",
     page_icon="☯",
     layout="centered",
+    menu_items={
+        "Get Help": None,
+        "Report a bug": None,
+        "About": None,
+    },
 )
 
 # ──────────────────────────────────────────────
@@ -46,10 +51,13 @@ def _init():
 # ──────────────────────────────────────────────
 @st.cache_resource
 def _get_supabase():
-    from supabase import create_client
-    url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["key"]
-    return create_client(url, key)
+    try:
+        from supabase import create_client
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
+        return create_client(url, key)
+    except Exception:
+        return None
 
 
 def get_today_count(email: str) -> int:
@@ -57,17 +65,19 @@ def get_today_count(email: str) -> int:
     cache_key = f"usage_{email}"
     if cache_key in st.session_state:
         return st.session_state[cache_key]
+    count = 0
     try:
         sb = _get_supabase()
-        today = date.today().isoformat()
-        res = (
-            sb.table("usage")
-            .select("count")
-            .eq("email", email)
-            .eq("use_date", today)
-            .execute()
-        )
-        count = res.data[0]["count"] if res.data else 0
+        if sb is not None and email:
+            today = date.today().isoformat()
+            res = (
+                sb.table("usage")
+                .select("count")
+                .eq("email", email)
+                .eq("use_date", today)
+                .execute()
+            )
+            count = res.data[0]["count"] if res.data else 0
     except Exception:
         count = 0
     st.session_state[cache_key] = count
@@ -873,12 +883,22 @@ def main():
 
     # ── Auth Gate ────────────────────────────
     if AUTH_ENABLED:
-        if not st.user.is_logged_in:
+        try:
+            logged_in = st.user.is_logged_in
+        except Exception:
+            logged_in = False
+
+        if not logged_in:
             _render_login_page()
             return  # st.stop() 이미 호출됨
 
-        email: str = st.user.email or ""
-        is_owner: bool = email == st.secrets.get("OWNER_EMAIL", "")
+        try:
+            email: str = st.user.email or ""
+        except Exception:
+            email = ""
+
+        owner_email = st.secrets.get("OWNER_EMAIL", "")
+        is_owner: bool = bool(email and email == owner_email)
         remaining: int = 999 if is_owner else max(0, DAILY_LIMIT - get_today_count(email))
     else:
         # 로컬 개발 모드 — 인증 없이 전체 기능 사용
