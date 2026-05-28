@@ -4,9 +4,13 @@ from google import genai
 from google.genai import types
 import os
 import io
+import base64
+import json
+import urllib.parse
 from datetime import date
 from PIL import Image
 from dotenv import load_dotenv
+import httpx
 from lectures import LECTURES, LECTURE_TITLES, QUIZZES
 from style import inject_css, HERO_HTML
 
@@ -26,8 +30,74 @@ st.set_page_config(
 # ──────────────────────────────────────────────
 # Auth & Rate Limit 설정
 # ──────────────────────────────────────────────
-AUTH_ENABLED: bool = "auth" in st.secrets
+AUTH_ENABLED: bool = "GOOGLE_CLIENT_ID" in st.secrets
 DAILY_LIMIT: int = 3
+
+GOOGLE_AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+# ──────────────────────────────────────────────
+# Google OAuth 헬퍼 (st.login() 미사용)
+# ──────────────────────────────────────────────
+def _make_google_login_url() -> str:
+    params = urllib.parse.urlencode({
+        "client_id":     st.secrets["GOOGLE_CLIENT_ID"],
+        "redirect_uri":  st.secrets.get("REDIRECT_URI", ""),
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "prompt":        "select_account",
+    })
+    return f"{GOOGLE_AUTH_URL}?{params}"
+
+
+def _handle_oauth_callback() -> None:
+    """URL의 code 파라미터를 토큰으로 교환 → session_state에 저장 → rerun."""
+    code = st.query_params.get("code", "")
+    if not code:
+        return
+    try:
+        resp = httpx.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "code":          code,
+                "client_id":     st.secrets["GOOGLE_CLIENT_ID"],
+                "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
+                "redirect_uri":  st.secrets.get("REDIRECT_URI", ""),
+                "grant_type":    "authorization_code",
+            },
+            timeout=10,
+        )
+        token_data = resp.json()
+        id_token = token_data.get("id_token", "")
+        if id_token:
+            payload = id_token.split(".")[1]
+            payload += "=" * (4 - len(payload) % 4)
+            user_info = json.loads(base64.urlsafe_b64decode(payload))
+            email = user_info.get("email", "")
+            name  = user_info.get("name", "")
+            if email:
+                st.session_state["auth_email"] = email
+                st.session_state["auth_name"]  = name
+    except Exception:
+        pass
+    st.query_params.clear()
+    st.rerun()
+
+
+def get_current_email() -> str:
+    """로그인된 이메일 반환. 없으면 빈 문자열."""
+    if "auth_email" in st.session_state:
+        return st.session_state["auth_email"]
+    if "code" in st.query_params:
+        _handle_oauth_callback()   # rerun 발생 → 이후 코드 실행 안 됨
+    return ""
+
+
+def _logout():
+    st.session_state.pop("auth_email", None)
+    st.session_state.pop("auth_name", None)
+    st.rerun()
 
 
 # ──────────────────────────────────────────────
@@ -135,12 +205,11 @@ def _render_login_page():
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         _, mid, _ = st.columns([1, 2, 1])
         with mid:
-            if st.button(
+            st.link_button(
                 "🔑  Google 계정으로 시작하기",
+                url=_make_google_login_url(),
                 use_container_width=True,
-                key="google_login_btn",
-            ):
-                st.login("google")
+            )
         st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
         st.caption(
             "로그인 정보(이메일)는 하루 사용 횟수 확인에만 쓰이며, 외부에 공유되지 않습니다."
@@ -398,7 +467,7 @@ def sidebar(auth_enabled: bool, email: str, is_owner: bool, remaining: int) -> s
 
         # ── 사용자 정보 (로그인 시) ─────────────
         if auth_enabled and email:
-            name = getattr(st.user, "name", None) or email.split("@")[0]
+            name = st.session_state.get("auth_name", "") or email.split("@")[0]
             st.markdown(
                 f"<div style='padding:8px 0 6px;'>"
                 f"<div style='font-weight:700;color:#272343;"
@@ -417,7 +486,7 @@ def sidebar(auth_enabled: bool, email: str, is_owner: bool, remaining: int) -> s
                 st.warning("오늘 사용량(3회)을 모두 사용했습니다.")
 
             if st.button("로그아웃", key="logout_btn", use_container_width=True):
-                st.logout()
+                _logout()
 
             st.divider()
 
@@ -883,19 +952,10 @@ def main():
 
     # ── Auth Gate ────────────────────────────
     if AUTH_ENABLED:
-        try:
-            logged_in = st.user.is_logged_in
-        except Exception:
-            logged_in = False
-
-        if not logged_in:
+        email: str = get_current_email()   # OAuth 콜백 처리 포함
+        if not email:
             _render_login_page()
             return  # st.stop() 이미 호출됨
-
-        try:
-            email: str = st.user.email or ""
-        except Exception:
-            email = ""
 
         owner_email = st.secrets.get("OWNER_EMAIL", "")
         is_owner: bool = bool(email and email == owner_email)
