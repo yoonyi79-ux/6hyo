@@ -6,6 +6,7 @@ import io
 from PIL import Image
 from dotenv import load_dotenv
 from lectures import LECTURES, LECTURE_TITLES
+from style import inject_css, HERO_HTML, LECTURE_HEADER_HTML
 
 load_dotenv()
 
@@ -378,8 +379,9 @@ def tab_interpreter(api_key: str):
         with st.spinner("🔮 육효를 해석하고 있습니다... (20~40초 소요)"):
             try:
                 result = call_gemini(uploaded, question.strip(), api_key)
-                st.subheader("🌟 해석 결과")
-                st.markdown(result)
+                with st.container(border=True):
+                    st.subheader("🌟 해석 결과")
+                    st.markdown(result)
 
             except Exception as e:
                 err = str(e)
@@ -395,9 +397,7 @@ def tab_interpreter(api_key: str):
 
 def tab_lecture():
     """📚 육효의 모든 것 탭"""
-    st.markdown("### 📚 육효의 모든 것")
-    st.markdown("육효의 기초부터 실전 해석까지, 7강으로 완성하는 육효 입문 강의입니다.")
-    st.divider()
+    st.markdown(LECTURE_HEADER_HTML, unsafe_allow_html=True)
 
     # 강의 선택 카드
     options = [f"{k}  {v}" for k, v in LECTURE_TITLES.items()]
@@ -416,9 +416,8 @@ def tab_lecture():
 
 
 def main():
-    st.title("☯ 육효의 세계")
-    st.caption("AI 기반 육효 해석 · 육효 입문 강의")
-    st.divider()
+    inject_css()
+    st.markdown(HERO_HTML, unsafe_allow_html=True)
 
     api_key = sidebar()
 
