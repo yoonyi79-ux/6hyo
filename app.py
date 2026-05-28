@@ -5,6 +5,7 @@ import os
 import io
 from PIL import Image
 from dotenv import load_dotenv
+from lectures import LECTURES, LECTURE_TITLES
 
 load_dotenv()
 
@@ -328,15 +329,8 @@ def sidebar() -> str:
     return api_key
 
 
-def main():
-    st.title("☯ 육효 해석 도우미")
-    st.markdown(
-        "육효 앱 화면 이미지 + 질문 → **누구나 이해할 수 있는 상세 해석**을 제공합니다."
-    )
-    st.divider()
-
-    api_key = sidebar()
-
+def tab_interpreter(api_key: str):
+    """🔮 육효 해석 탭"""
     left, right = st.columns([1, 1], gap="large")
 
     with left:
@@ -397,6 +391,44 @@ def main():
                     st.error("❌ 오늘 무료 사용량을 초과했습니다. 내일 다시 시도해주세요.")
                 else:
                     st.error(f"❌ 오류가 발생했습니다: {err}")
+
+
+def tab_lecture():
+    """📚 육효의 모든 것 탭"""
+    st.markdown("### 📚 육효의 모든 것")
+    st.markdown("육효의 기초부터 실전 해석까지, 7강으로 완성하는 육효 입문 강의입니다.")
+    st.divider()
+
+    # 강의 선택 카드
+    options = [f"{k}  {v}" for k, v in LECTURE_TITLES.items()]
+    keys    = list(LECTURE_TITLES.keys())
+
+    selected_label = st.radio(
+        "강의를 선택하세요",
+        options,
+        horizontal=False,
+        label_visibility="collapsed",
+    )
+    selected_key = keys[options.index(selected_label)]
+
+    st.divider()
+    st.markdown(LECTURES[selected_key], unsafe_allow_html=False)
+
+
+def main():
+    st.title("☯ 육효의 세계")
+    st.caption("AI 기반 육효 해석 · 육효 입문 강의")
+    st.divider()
+
+    api_key = sidebar()
+
+    tab1, tab2 = st.tabs(["🔮 육효 해석", "📚 육효의 모든 것"])
+
+    with tab1:
+        tab_interpreter(api_key)
+
+    with tab2:
+        tab_lecture()
 
 
 if __name__ == "__main__":
