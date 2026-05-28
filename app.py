@@ -5,16 +5,31 @@ import os
 import io
 from PIL import Image
 from dotenv import load_dotenv
-from lectures import LECTURES, LECTURE_TITLES
-from style import inject_css, HERO_HTML, LECTURE_HEADER_HTML
+from lectures import LECTURES, LECTURE_TITLES, QUIZZES
+from style import inject_css, HERO_HTML
 
 load_dotenv()
 
 st.set_page_config(
-    page_title="육효 해석 도우미",
+    page_title="육효의 세계",
     page_icon="☯",
     layout="centered",
 )
+
+# ──────────────────────────────────────────────
+# Session State 초기화
+# ──────────────────────────────────────────────
+def _init():
+    defaults = {
+        "page":          "main",   # "main" | "lecture"
+        "cur_lec":       1,        # 1 ~ 7
+        "content_done":  set(),    # 강의 본문 완료한 강 번호들
+        "quiz_done":     set(),    # 퀴즈까지 완료한 강 번호들
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
 
 # ──────────────────────────────────────────────
 # 시스템 프롬프트
@@ -65,21 +80,10 @@ SYSTEM_PROMPT = """
 | 官(관귀) | 양면성 글자 | 통제·압박·명예 | 직장·승진·남편(여성 관점) | 병·소송·압박·귀신 |
 | 父(부모) | 우울·문서 글자 | 문서·지식·보호 | 계약·시험합격·집 | 우울·걱정·막힘 |
 
-비유:
-- 兄 = 지갑이 같이 열리는 친구
-- 孫 = 모든 문제를 푸는 만능 열쇠 (단, 父라는 자물쇠는 못 품)
-- 財 = 곳간에 쌓이는 수확
-- 官 = 직장 상사 — 잘 보면 승진, 밉보면 압박
-- 父 = 두꺼운 계약서, 통과하면 인정
-
 ## 2. 세효(世)와 응효(應)
 
 - **세효(世)** = 나 / 질문하는 사람
 - **응효(應)** = 상대방 / 외부환경
-  - 연애: 응 = 이성 상대
-  - 취업: 응 = 회사/면접관
-  - 거래: 응 = 거래처
-  - 소송: 응 = 상대방
 
 세효가 강하면 내가 주도권. 응효가 강하면 상황이 외부에 달려 있음.
 
@@ -101,31 +105,21 @@ SYSTEM_PROMPT = """
 
 동효 = 움직이는 효 = 진짜 사건이 일어나는 곳
 
-- 동효가 용신을 **생(生)** 하면 → ✅ 좋은 방향
-- 동효가 용신을 **극(克)** 하면 → ❌ 방해·문제
+- 동효가 용신을 **생(生)** 하면 → 좋은 방향
+- 동효가 용신을 **극(克)** 하면 → 방해·문제
 - 동효 없음 → 변화 없이 조용한 상태
 
-**동효의 강도 판단 (매우 중요):**
+**동효의 강도 판단:**
 - 파란 글자(월령의 생·합)를 받은 동효 → 힘이 강함
 - 빨간 글자(일진의 생·합)를 받은 동효 → 힘이 강함
-- 파란·빨간 표시를 많이 받을수록 더 강력하게 용신에 영향을 미침
-- 동효가 강할수록 생이면 더 크게 도움, 극이면 더 크게 방해
 
-**변효(變爻) 해석 원칙 (핵심):**
+**변효(變爻) 해석 원칙:**
 - 변효는 오직 본효(동효)를 생하는지 극하는지만 분석
 - **회두생(回頭生)**: 변효가 본효를 생해줌 → 처음 힘들다가 결국 좋아짐
 - **회두극(回頭克)**: 변효가 본효를 극함 → 발등 찍히는 상황, 매우 나쁨
 - **본효가 변효를 극하는 경우**: 변효는 본효에 아무 영향 없음 (무시)
-  예) 관인목(寅木)이 변해 형축토(丑土) → 축토는 인목에게 극당하므로 본효에 영향 없음
-- 변효 자체의 육친 의미는 해석하지 않음
 - **진신(進神)**: 같은 오행의 더 강한 글자로 변함 → 기세가 점점 강해짐
 - **퇴신(退神)**: 같은 오행의 더 약한 글자로 변함 → 기세가 꺾임
-
-**실전 적용 예시 (취업):**
-- 취업 용신 = 관효(官爻)
-- 손효(孫爻)가 동하면 → 손극관(孫克官)으로 취업 방해
-- 손효가 월(파란)·일(빨간)의 생합까지 받으면 → 힘이 강해져 취업 가능성 더욱 낮아짐
-- 관효가 변한 변효가 관효를 극하지 않으면 → 변효는 무시
 
 ## 5. 오행 상생·상극
 
@@ -147,14 +141,9 @@ SYSTEM_PROMPT = """
 
 합(合): 결합·묶임 → 좋으면 계약, 나쁘면 집착·구속
 충(沖): 깨짐·이동 → 좋으면 돌파, 나쁘면 파탄·이별
-형(刑): 스트레스·법적 마찰 (인사신·축술미)
+형(刑): 스트레스·법적 마찰
 
-## 7. 효위(위치) 보조 의미
-
-1효=기초·집 내부 / 2효=안방·일상 / 3효=현관·출입
-4효=대문·외부 / 5효=도로·사회 / 6효=먼 곳·결말
-
-## 8. 실전 해석 순서
+## 7. 실전 해석 순서
 
 1. 질문 확인 → 용신 선택
 2. 세효 상태 (강한가·공망인가)
@@ -197,12 +186,12 @@ SYSTEM_PROMPT = """
 (용신이 강한지·약한지·공망인지를 비유로)
 
 ### 어떤 사건이 일어나고 있나요?
-(동효가 없으면 "조용한 상태". 있으면 아래 순서로 스토리 설명:
+(동효가 없으면 "조용한 상태". 있으면:
 ① 동효 육친이 무엇인지
 ② 동효가 용신을 생하는지 극하는지
-③ 동효의 강도: 파란(월)·빨간(일) 생합 표시가 있으면 "강력한 영향"
-④ 변효가 본효를 생하는지 극하는지(회두생/회두극), 본효가 변효를 극하면 무시
-⑤ 종합하여 사건이 어떻게 전개되는지 비유로 설명)
+③ 동효의 강도: 파란·빨간 생합 표시
+④ 변효 회두생/회두극 여부
+⑤ 종합 스토리)
 
 ### 특별히 주의할 것
 (공망·월파·합·충·암동이 있으면 설명. 없으면 생략)
@@ -250,18 +239,23 @@ SYSTEM_PROMPT = """
 
 
 # ──────────────────────────────────────────────
-# 유틸 함수
+# Gemini API 호출
 # ──────────────────────────────────────────────
-
-def call_gemini(uploaded_file, question: str, api_key: str) -> str:
-    """Gemini API 호출 → 육효 해석 반환."""
+def call_gemini(uploaded_file, question: str, api_key: str, yongshin: str = "auto") -> str:
     client = genai.Client(api_key=api_key)
-
     uploaded_file.seek(0)
     image = Image.open(io.BytesIO(uploaded_file.read()))
 
+    yongshin_hint = ""
+    if yongshin != "auto":
+        yongshin_hint = (
+            f"\n\n[중요] 용신(用神)을 질문자가 직접 지정했습니다: **{yongshin}**. "
+            "이 육친을 용신으로 삼아 해석해주세요. "
+            "용신 선택 이유 항목에도 '질문자 직접 지정'으로 명시해주세요."
+        )
+
     user_text = (
-        f"질문: {question}\n\n"
+        f"질문: {question}{yongshin_hint}\n\n"
         "위 육효 앱 화면 이미지를 정확히 읽고, 이 질문에 대한 해석을 작성해 주세요."
     )
 
@@ -277,14 +271,12 @@ def call_gemini(uploaded_file, question: str, api_key: str) -> str:
 
 
 # ──────────────────────────────────────────────
-# UI
+# 사이드바
 # ──────────────────────────────────────────────
-
 def sidebar() -> str:
     with st.sidebar:
-        st.header("⚙️ 설정")
+        st.markdown("### ⚙️ 설정")
 
-        # 우선순위: st.secrets → .env → 사용자 직접 입력
         secret_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
         env_key = os.getenv("GEMINI_API_KEY", "")
         preset_key = secret_key or env_key
@@ -295,7 +287,6 @@ def sidebar() -> str:
         else:
             st.markdown(
                 "**무료** Google Gemini API 키가 필요합니다.\n\n"
-                "아래 링크에서 무료로 발급받으세요 (구글 계정만 있으면 됩니다):\n\n"
                 "👉 **[Google AI Studio → API 키 발급](https://aistudio.google.com/apikey)**"
             )
             api_key = st.text_input(
@@ -319,23 +310,267 @@ def sidebar() -> str:
 - 남자친구와 재회할 수 있을까요?
 - 사업 투자를 해도 괜찮을까요?
 - 소송에서 내가 이길 수 있을까요?
-- 이 집을 사도 괜찮을까요?
 
 ### 🆓 Gemini 무료 한도
 - 하루 1,500회 / 분당 15회
 - 카드 등록 불필요
         """)
-        st.caption("powered by Google Gemini 2.0 Flash")
+        st.caption("powered by Google Gemini 3.5 Flash")
 
     return api_key
 
 
-def tab_interpreter(api_key: str):
-    """🔮 육효 해석 탭"""
+# ──────────────────────────────────────────────
+# 퀴즈
+# ──────────────────────────────────────────────
+def _lec_quiz_key(lec_num: int, q_idx: int) -> str:
+    return f"q_{lec_num}_{q_idx}"
+
+def _saved_answer_key(lec_num: int, q_idx: int) -> str:
+    return f"saved_q_{lec_num}_{q_idx}"
+
+def show_quiz(lec_num: int) -> bool:
+    """
+    퀴즈를 렌더링합니다.
+    Returns True if the quiz has been submitted (quiz_done).
+    """
+    lec_key = f"{lec_num}강"
+    quizzes = QUIZZES.get(lec_key, [])
+    if not quizzes:
+        return True
+
+    st.divider()
+    st.markdown(
+        "<div style='background:#e3f6f5;border:2px solid #272343;border-radius:16px;"
+        "padding:18px 24px;margin-bottom:16px;box-shadow:4px 4px 0 #bae8e8;'>"
+        "<span style='font-family:Montserrat,sans-serif;font-weight:800;font-size:1.05rem;"
+        "color:#272343;'>📝 확인 퀴즈</span>"
+        "<span style='font-size:0.85rem;color:#2d334a;margin-left:10px;'>"
+        "강의 내용을 잘 이해했는지 확인해보세요</span></div>",
+        unsafe_allow_html=True,
+    )
+
+    submitted = lec_num in st.session_state.quiz_done
+    all_answered = True
+
+    for i, quiz in enumerate(quizzes):
+        st.markdown(f"**Q{i + 1}.** {quiz['question']}")
+
+        q_key = _lec_quiz_key(lec_num, i)
+        sv_key = _saved_answer_key(lec_num, i)
+        correct_label = quiz["options"][quiz["answer"]]
+
+        if submitted:
+            saved = st.session_state.get(sv_key)
+            for opt in quiz["options"]:
+                if opt == correct_label:
+                    st.markdown(
+                        f"<div style='color:#059669;font-weight:600;padding:4px 0;'>✅ {opt}</div>",
+                        unsafe_allow_html=True,
+                    )
+                elif opt == saved:
+                    st.markdown(
+                        f"<div style='color:#dc2626;font-weight:600;padding:4px 0;'>❌ {opt}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"<div style='color:#6b7280;padding:4px 0;'>&nbsp;&nbsp;&nbsp;{opt}</div>",
+                        unsafe_allow_html=True,
+                    )
+            st.caption(f"💡 {quiz['explanation']}")
+        else:
+            sel = st.radio(
+                label=f"q{lec_num}_{i}",
+                options=quiz["options"],
+                index=None,
+                key=q_key,
+                label_visibility="collapsed",
+            )
+            if sel is None:
+                all_answered = False
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # 제출 버튼
+    if not submitted:
+        _, mid, _ = st.columns([2, 1, 2])
+        with mid:
+            if st.button(
+                "답안 제출",
+                disabled=not all_answered,
+                use_container_width=True,
+                key=f"submit_quiz_{lec_num}",
+            ):
+                # 답 저장 + 점수 계산
+                correct_count = 0
+                for i, quiz in enumerate(quizzes):
+                    selected = st.session_state.get(_lec_quiz_key(lec_num, i))
+                    st.session_state[_saved_answer_key(lec_num, i)] = selected
+                    if selected == quiz["options"][quiz["answer"]]:
+                        correct_count += 1
+                st.session_state[f"score_{lec_num}"] = correct_count
+                st.session_state.quiz_done.add(lec_num)
+                st.rerun()
+        return False
+
+    # 결과 표시
+    score = st.session_state.get(f"score_{lec_num}", 0)
+    total = len(quizzes)
+    if score == total:
+        st.success(f"🎉 {total}/{total} 전부 정답! 완벽합니다.")
+    elif score >= round(total * 0.6):
+        st.info(f"📊 {total}문제 중 {score}문제 정답. 잘 하셨어요!")
+    else:
+        st.warning(f"📊 {total}문제 중 {score}문제 정답. 강의를 다시 복습해보세요.")
+    return True
+
+
+# ──────────────────────────────────────────────
+# 진도 계산 헬퍼
+# ──────────────────────────────────────────────
+def _max_unlocked() -> int:
+    """접근 가능한 최대 강 번호."""
+    unlocked = 1
+    for i in range(1, 8):
+        if i in st.session_state.quiz_done:
+            unlocked = min(i + 1, 7)
+        else:
+            break
+    return unlocked
+
+
+# ──────────────────────────────────────────────
+# 강의 페이지
+# ──────────────────────────────────────────────
+def page_lecture():
+    # ── 뒤로가기 ──────────────────────────────
+    if st.button("← 홈으로", key="back_home"):
+        st.session_state.page = "main"
+        st.rerun()
+
+    # ── 헤더 ──────────────────────────────────
+    st.markdown(
+        "<div style='background:#e3f6f5;border:2px solid #272343;border-radius:20px;"
+        "padding:20px 24px;margin:12px 0 16px;box-shadow:5px 5px 0 #bae8e8;"
+        "display:flex;align-items:center;gap:14px;'>"
+        "<div style='width:46px;height:46px;background:#272343;border-radius:12px;"
+        "display:flex;align-items:center;justify-content:center;"
+        "color:#ffd803;font-size:1.3rem;flex-shrink:0;'>"
+        "<i class='fa-solid fa-book-open'></i></div>"
+        "<div><div style='font-family:Montserrat,sans-serif;font-weight:800;"
+        "font-size:1.15rem;color:#272343;'>육효의 모든 것</div>"
+        "<div style='font-size:0.85rem;color:#2d334a;margin-top:2px;'>"
+        "기초부터 실전까지 — 7강으로 완성하는 육효 입문</div></div></div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── 진도 표시 ──────────────────────────────
+    cur = st.session_state.cur_lec
+    max_ok = _max_unlocked()
+
+    dots_html = "<div style='display:flex;align-items:center;gap:6px;margin:4px 0 16px;'>"
+    for i in range(1, 8):
+        if i in st.session_state.quiz_done:
+            bg, fg, symbol = "#ffd803", "#272343", "✓"
+            bdr = "#272343"
+        elif i == cur:
+            bg, fg, symbol = "#272343", "#ffd803", str(i)
+            bdr = "#272343"
+        elif i <= max_ok:
+            bg, fg, symbol = "#e3f6f5", "#272343", str(i)
+            bdr = "#272343"
+        else:
+            bg, fg, symbol = "#fffffe", "#9ca3af", str(i)
+            bdr = "#d1d5db"
+
+        dots_html += (
+            f"<div style='width:36px;height:36px;background:{bg};"
+            f"border:2px solid {bdr};border-radius:50%;"
+            f"display:flex;align-items:center;justify-content:center;"
+            f"font-weight:700;font-size:0.82rem;color:{fg};flex-shrink:0;'>{symbol}</div>"
+        )
+        if i < 7:
+            dots_html += (
+                "<div style='flex:1;max-width:28px;height:2px;"
+                f"background:{'#272343' if i < max_ok else '#e5e7eb'};'></div>"
+            )
+    dots_html += "</div>"
+    st.markdown(dots_html, unsafe_allow_html=True)
+
+    # ── 상단 이전/다음 이동 ────────────────────
+    nav_prev, nav_title, nav_next = st.columns([1, 4, 1])
+    with nav_prev:
+        if cur > 1:
+            if st.button("← 이전", key="nav_prev", use_container_width=True):
+                st.session_state.cur_lec = cur - 1
+                st.rerun()
+    with nav_title:
+        lec_key = f"{cur}강"
+        st.markdown(
+            f"<div style='text-align:center;font-weight:700;color:#272343;"
+            f"font-size:0.92rem;padding:8px 0;'>{lec_key} · {LECTURE_TITLES[lec_key]}</div>",
+            unsafe_allow_html=True,
+        )
+    with nav_next:
+        if cur < max_ok:
+            if st.button("다음 →", key="nav_next", use_container_width=True):
+                st.session_state.cur_lec = cur + 1
+                st.rerun()
+
+    st.divider()
+
+    # ── 강의 본문 ─────────────────────────────
+    st.markdown(LECTURES[lec_key], unsafe_allow_html=False)
+
+    # ── 학습 완료 버튼 ─────────────────────────
+    if cur not in st.session_state.content_done:
+        st.divider()
+        _, mid, _ = st.columns([2, 1, 2])
+        with mid:
+            if st.button("✅ 학습 완료", use_container_width=True, key=f"done_{cur}"):
+                st.session_state.content_done.add(cur)
+                st.rerun()
+        st.caption(
+            "<div style='text-align:center;'>강의를 다 읽으셨나요? 학습 완료를 누르면 확인 퀴즈가 시작됩니다.</div>",
+            # workaround: use markdown
+        )
+    else:
+        # ── 퀴즈 ──────────────────────────────
+        quiz_passed = show_quiz(cur)
+
+        # ── 다음 강으로 ────────────────────────
+        if quiz_passed:
+            st.divider()
+            _, mid, _ = st.columns([2, 1, 2])
+            with mid:
+                if cur < 7:
+                    if st.button(
+                        f"{cur + 1}강으로 →",
+                        use_container_width=True,
+                        key=f"next_lec_{cur}",
+                    ):
+                        st.session_state.cur_lec = cur + 1
+                        st.rerun()
+                else:
+                    st.success(
+                        "🎉 모든 강의를 완료했습니다! "
+                        "이제 직접 육효 이미지를 업로드해서 해석해보세요."
+                    )
+                    if st.button("홈으로 돌아가기", use_container_width=True, key="go_home_final"):
+                        st.session_state.page = "main"
+                        st.rerun()
+
+
+# ──────────────────────────────────────────────
+# 메인 페이지 (육효 해석)
+# ──────────────────────────────────────────────
+def page_main(api_key: str):
+    # ── 입력 영역 ─────────────────────────────
     left, right = st.columns([1, 1], gap="large")
 
     with left:
-        st.subheader("📷 육효 화면 이미지")
+        st.markdown("#### 육효 화면 이미지")
         uploaded = st.file_uploader(
             "이미지 업로드",
             type=["png", "jpg", "jpeg", "webp"],
@@ -344,8 +579,10 @@ def tab_interpreter(api_key: str):
         if uploaded:
             st.image(uploaded, use_container_width=True)
 
+    yongshin = "auto"  # 기본값
+
     with right:
-        st.subheader("❓ 질문")
+        st.markdown("#### 질문")
         question = st.text_area(
             "질문",
             placeholder=(
@@ -355,9 +592,29 @@ def tab_interpreter(api_key: str):
                 "• 이 사업 투자를 해도 괜찮을까요?\n"
                 "• 소송에서 내가 이길 수 있을까요?"
             ),
-            height=180,
+            height=158,
             label_visibility="collapsed",
         )
+
+        # 용신 직접 지정 (optional)
+        with st.expander("⚙️ 용신 직접 지정 (선택사항)"):
+            st.caption("AI가 자동으로 선택합니다. 직접 지정하면 해당 육친을 용신으로 해석합니다.")
+            yongshin_map = {
+                "AI가 자동 선택 (권장)": "auto",
+                "財 — 재물 · 사업 · 연애(남성)": "財",
+                "官 — 직장 · 승진 · 남편(여성) · 건강": "官",
+                "父 — 문서 · 시험 · 계약 · 부동산": "父",
+                "孫 — 자녀 · 건강 · 해결 · 복": "孫",
+                "兄 — 동료 · 경쟁 · 협력": "兄",
+            }
+            ys_label = st.selectbox(
+                "용신 선택",
+                list(yongshin_map.keys()),
+                label_visibility="collapsed",
+            )
+            yongshin = yongshin_map[ys_label]
+            if yongshin != "auto":
+                st.info(f"선택된 용신: **{yongshin}** — AI가 이 육친을 용신으로 해석합니다.")
 
         ready = bool(api_key and uploaded and question.strip())
         clicked = st.button(
@@ -370,22 +627,22 @@ def tab_interpreter(api_key: str):
         if not api_key:
             st.caption("⬅️ 사이드바에서 API 키를 입력해주세요.")
         elif not uploaded:
-            st.caption("이미지를 업로드해주세요.")
+            st.caption("왼쪽에 이미지를 업로드해주세요.")
         elif not question.strip():
             st.caption("질문을 입력해주세요.")
 
+    # ── 해석 결과 ─────────────────────────────
     if clicked and ready:
         st.divider()
         with st.spinner("🔮 육효를 해석하고 있습니다... (20~40초 소요)"):
             try:
-                result = call_gemini(uploaded, question.strip(), api_key)
+                result = call_gemini(uploaded, question.strip(), api_key, yongshin)
                 with st.container(border=True):
                     st.subheader("🌟 해석 결과")
                     st.markdown(result)
-
             except Exception as e:
                 err = str(e)
-                if "API_KEY_INVALID" in err or "API key" in err.lower():
+                if "API_KEY_INVALID" in err or "api key" in err.lower():
                     st.error("❌ API 키가 올바르지 않습니다. 다시 확인해주세요.")
                 elif "PERMISSION_DENIED" in err:
                     st.error("❌ API 키 권한이 없습니다.")
@@ -394,40 +651,36 @@ def tab_interpreter(api_key: str):
                 else:
                     st.error(f"❌ 오류가 발생했습니다: {err}")
 
+    # ── 강의 페이지 이동 버튼 ─────────────────
+    st.markdown("<div style='height:48px'></div>", unsafe_allow_html=True)
 
-def tab_lecture():
-    """📚 육효의 모든 것 탭"""
-    st.markdown(LECTURE_HEADER_HTML, unsafe_allow_html=True)
-
-    # 강의 선택 카드
-    options = [f"{k}  {v}" for k, v in LECTURE_TITLES.items()]
-    keys    = list(LECTURE_TITLES.keys())
-
-    selected_label = st.radio(
-        "강의를 선택하세요",
-        options,
-        horizontal=False,
-        label_visibility="collapsed",
+    st.markdown(
+        "<div style='text-align:center;color:#6b7280;font-size:0.9rem;margin-bottom:10px;'>"
+        "육효가 처음이신가요? 7강 강의로 기초부터 배워보세요.</div>",
+        unsafe_allow_html=True,
     )
-    selected_key = keys[options.index(selected_label)]
 
-    st.divider()
-    st.markdown(LECTURES[selected_key], unsafe_allow_html=False)
+    _, mid, _ = st.columns([2, 1, 2])
+    with mid:
+        if st.button("📚 육효의 모든 것", use_container_width=True, key="go_lecture"):
+            st.session_state.page = "lecture"
+            st.rerun()
 
 
+# ──────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────
 def main():
+    _init()
     inject_css()
-    st.markdown(HERO_HTML, unsafe_allow_html=True)
 
     api_key = sidebar()
 
-    tab1, tab2 = st.tabs(["🔮 육효 해석", "📚 육효의 모든 것"])
-
-    with tab1:
-        tab_interpreter(api_key)
-
-    with tab2:
-        tab_lecture()
+    if st.session_state.page == "main":
+        st.markdown(HERO_HTML, unsafe_allow_html=True)
+        page_main(api_key)
+    else:
+        page_lecture()
 
 
 if __name__ == "__main__":
