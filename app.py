@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 import os
 import io
+from datetime import date
 from PIL import Image
 from dotenv import load_dotenv
 from lectures import LECTURES, LECTURE_TITLES, QUIZZES
@@ -18,19 +19,124 @@ st.set_page_config(
 )
 
 # ──────────────────────────────────────────────
+# Auth & Rate Limit 설정
+# ──────────────────────────────────────────────
+AUTH_ENABLED: bool = "auth" in st.secrets
+DAILY_LIMIT: int = 3
+
+
+# ──────────────────────────────────────────────
 # Session State 초기화
 # ──────────────────────────────────────────────
 def _init():
     defaults = {
-        "page":          "main",   # "main" | "lecture"
-        "cur_lec":       1,        # 1 ~ 7
-        "content_done":  set(),    # 강의 본문 완료한 강 번호들
-        "quiz_done":     set(),    # 퀴즈까지 완료한 강 번호들
-        "scroll_top":    False,    # 강의 이동 시 화면 상단 스크롤 트리거
+        "page":         "main",   # "main" | "lecture"
+        "cur_lec":      1,        # 1 ~ 7
+        "content_done": set(),    # 강의 본문 완료한 강 번호들
+        "quiz_done":    set(),    # 퀴즈까지 완료한 강 번호들
+        "scroll_top":   False,    # 강의 이동 시 화면 상단 스크롤 트리거
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+
+# ──────────────────────────────────────────────
+# Supabase 헬퍼
+# ──────────────────────────────────────────────
+@st.cache_resource
+def _get_supabase():
+    from supabase import create_client
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+
+def get_today_count(email: str) -> int:
+    """오늘 사용 횟수 반환 — session_state 캐시 우선."""
+    cache_key = f"usage_{email}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    try:
+        sb = _get_supabase()
+        today = date.today().isoformat()
+        res = (
+            sb.table("usage")
+            .select("count")
+            .eq("email", email)
+            .eq("use_date", today)
+            .execute()
+        )
+        count = res.data[0]["count"] if res.data else 0
+    except Exception:
+        count = 0
+    st.session_state[cache_key] = count
+    return count
+
+
+def increment_usage(email: str):
+    """사용 횟수 +1 기록 (실패해도 앱은 계속 동작)."""
+    try:
+        sb = _get_supabase()
+        today = date.today().isoformat()
+        existing = (
+            sb.table("usage")
+            .select("count")
+            .eq("email", email)
+            .eq("use_date", today)
+            .execute()
+        )
+        if existing.data:
+            new_count = existing.data[0]["count"] + 1
+            sb.table("usage").update({"count": new_count}).eq(
+                "email", email
+            ).eq("use_date", today).execute()
+        else:
+            new_count = 1
+            sb.table("usage").insert(
+                {"email": email, "use_date": today, "count": 1}
+            ).execute()
+        # 세션 캐시 갱신
+        st.session_state[f"usage_{email}"] = new_count
+    except Exception:
+        pass
+
+
+# ──────────────────────────────────────────────
+# 로그인 페이지
+# ──────────────────────────────────────────────
+def _render_login_page():
+    inject_css()
+    st.markdown(HERO_HTML, unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown(
+            "<div style='text-align:center;padding:24px 0 16px;'>"
+            "<div style='font-size:2.8rem;line-height:1;'>🔐</div>"
+            "<div style='font-family:Montserrat,sans-serif;font-weight:800;"
+            "font-size:1.25rem;color:#272343;margin:12px 0 8px;'>"
+            "로그인이 필요합니다</div>"
+            "<div style='font-size:0.93rem;color:#2d334a;line-height:1.75;'>"
+            "Google 계정으로 로그인하면<br>"
+            "매일 <strong>3회</strong> 무료로 육효 해석을 이용할 수 있습니다.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            if st.button(
+                "🔑  Google 계정으로 시작하기",
+                use_container_width=True,
+                key="google_login_btn",
+            ):
+                st.login("google")
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        st.caption(
+            "로그인 정보(이메일)는 하루 사용 횟수 확인에만 쓰이며, 외부에 공유되지 않습니다."
+        )
+
+    st.stop()
 
 
 # ──────────────────────────────────────────────
@@ -277,8 +383,35 @@ def call_gemini(uploaded_file, question: str, api_key: str, yongshin: str = "aut
 # ──────────────────────────────────────────────
 # 사이드바
 # ──────────────────────────────────────────────
-def sidebar() -> str:
+def sidebar(auth_enabled: bool, email: str, is_owner: bool, remaining: int) -> str:
     with st.sidebar:
+
+        # ── 사용자 정보 (로그인 시) ─────────────
+        if auth_enabled and email:
+            name = getattr(st.user, "name", None) or email.split("@")[0]
+            st.markdown(
+                f"<div style='padding:8px 0 6px;'>"
+                f"<div style='font-weight:700;color:#272343;"
+                f"font-size:0.93rem;'>👤 {name}</div>"
+                f"<div style='font-size:0.78rem;color:#6b7280;"
+                f"margin-top:2px;'>{email}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            if is_owner:
+                st.success("✨ 관리자 — 무제한 사용")
+            elif remaining > 0:
+                st.info(f"오늘 남은 해석: **{remaining}회**")
+            else:
+                st.warning("오늘 사용량(3회)을 모두 사용했습니다.")
+
+            if st.button("로그아웃", key="logout_btn", use_container_width=True):
+                st.logout()
+
+            st.divider()
+
+        # ── API 키 설정 ─────────────────────────
         st.markdown("### ⚙️ 설정")
 
         secret_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
@@ -288,6 +421,9 @@ def sidebar() -> str:
         if preset_key:
             st.success("✅ API 키 자동 감지됨")
             api_key = preset_key
+        elif auth_enabled:
+            st.error("⚠️ 관리자: Secrets에 GEMINI_API_KEY를 설정해주세요.")
+            api_key = ""
         else:
             st.markdown(
                 "**무료** Google Gemini API 키가 필요합니다.\n\n"
@@ -314,11 +450,13 @@ def sidebar() -> str:
 - 남자친구와 재회할 수 있을까요?
 - 사업 투자를 해도 괜찮을까요?
 - 소송에서 내가 이길 수 있을까요?
-
+        """)
+        if not auth_enabled:
+            st.markdown("""
 ### 🆓 Gemini 무료 한도
 - 하루 1,500회 / 분당 15회
 - 카드 등록 불필요
-        """)
+            """)
         st.caption("powered by Google Gemini 3.5 Flash")
 
     return api_key
@@ -523,7 +661,8 @@ def page_lecture():
         if i < 7:
             line_color = "#272343" if i < max_ok else "#e5e7eb"
             dots_html += (
-                f"<div style='flex:1;max-width:24px;height:2px;background:{line_color};'></div>"
+                f"<div style='flex:1;max-width:24px;height:2px;"
+                f"background:{line_color};'></div>"
             )
     dots_html += "</div>"
     st.markdown(dots_html, unsafe_allow_html=True)
@@ -603,7 +742,7 @@ def page_lecture():
 # ──────────────────────────────────────────────
 # 메인 페이지 (육효 해석) — 단일 컬럼 카드
 # ──────────────────────────────────────────────
-def page_main(api_key: str):
+def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, remaining: int):
 
     # ── 육효 해석 카드 ────────────────────────
     with st.container(border=True):
@@ -668,8 +807,16 @@ def page_main(api_key: str):
             if yongshin != "auto":
                 st.info(f"선택된 용신: **{yongshin}** — AI가 이 육친을 용신으로 해석합니다.")
 
-        # 5. 해석하기 버튼
-        ready = bool(api_key and uploaded and question.strip())
+        # 5. 사용량 초과 안내
+        if auth_enabled and not is_owner and remaining == 0:
+            st.warning(
+                f"⚠️ 오늘 무료 사용량({DAILY_LIMIT}회)을 모두 사용했습니다. "
+                "내일 다시 이용해주세요."
+            )
+
+        # 6. 해석하기 버튼
+        can_use = is_owner or not auth_enabled or remaining > 0
+        ready = bool(api_key and uploaded and question.strip() and can_use)
         clicked = st.button(
             "🔮 해석하기",
             type="primary",
@@ -683,6 +830,8 @@ def page_main(api_key: str):
             st.caption("이미지를 업로드해주세요.")
         elif not question.strip():
             st.caption("질문을 입력해주세요.")
+        elif auth_enabled and not is_owner and remaining > 0:
+            st.caption(f"오늘 {remaining}회 남았습니다.")
 
     # ── 해석 결과 (카드 외부) ─────────────────
     if clicked and ready:
@@ -690,6 +839,9 @@ def page_main(api_key: str):
         with st.spinner("🔮 육효를 해석하고 있습니다... (20~40초 소요)"):
             try:
                 result = call_gemini(uploaded, question.strip(), api_key, yongshin)
+                # 성공 시 사용 횟수 증가
+                if auth_enabled and not is_owner:
+                    increment_usage(email)
                 with st.container(border=True):
                     st.subheader("🌟 해석 결과")
                     st.markdown(result)
@@ -718,13 +870,29 @@ def page_main(api_key: str):
 # ──────────────────────────────────────────────
 def main():
     _init()
+
+    # ── Auth Gate ────────────────────────────
+    if AUTH_ENABLED:
+        if not st.user.is_logged_in:
+            _render_login_page()
+            return  # st.stop() 이미 호출됨
+
+        email: str = st.user.email or ""
+        is_owner: bool = email == st.secrets.get("OWNER_EMAIL", "")
+        remaining: int = 999 if is_owner else max(0, DAILY_LIMIT - get_today_count(email))
+    else:
+        # 로컬 개발 모드 — 인증 없이 전체 기능 사용
+        email = "local@dev"
+        is_owner = True
+        remaining = 999
+
     inject_css()
 
-    api_key = sidebar()
+    api_key = sidebar(AUTH_ENABLED, email, is_owner, remaining)
 
     if st.session_state.page == "main":
         st.markdown(HERO_HTML, unsafe_allow_html=True)
-        page_main(api_key)
+        page_main(api_key, AUTH_ENABLED, email, is_owner, remaining)
     else:
         page_lecture()
 
