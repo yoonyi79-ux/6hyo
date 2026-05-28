@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 import os
 import io
+import re
 import base64
 import json
 import urllib.parse
@@ -98,6 +99,64 @@ def _logout():
     st.session_state.pop("auth_email", None)
     st.session_state.pop("auth_name", None)
     st.rerun()
+
+
+# ──────────────────────────────────────────────
+# API 키 헬퍼
+# ──────────────────────────────────────────────
+def _get_api_key() -> str:
+    """Secrets 또는 환경변수에서 Gemini API 키 반환."""
+    try:
+        secret_key = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:
+        secret_key = ""
+    env_key = os.getenv("GEMINI_API_KEY", "")
+    return secret_key or env_key
+
+
+# ──────────────────────────────────────────────
+# 사용자 정보 바 (메인 페이지 상단)
+# ──────────────────────────────────────────────
+def _render_user_bar(email: str, is_owner: bool, remaining: int):
+    """메인 페이지 상단 — 이름·이메일·사용량 뱃지·로그아웃 버튼."""
+    if not AUTH_ENABLED or not email:
+        return
+    name = st.session_state.get("auth_name", "") or email.split("@")[0]
+    c1, c2, c3 = st.columns([5, 3, 1])
+    with c1:
+        st.markdown(
+            f"<div style='padding:5px 0;line-height:1.4;'>"
+            f"<span style='font-weight:700;color:#272343;font-size:0.93rem;'>👤 {name}</span>"
+            f"<span style='color:#6b7280;font-size:0.78rem;margin-left:8px;'>({email})</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with c2:
+        if is_owner:
+            st.markdown(
+                "<div style='background:#ffd803;border:2px solid #272343;border-radius:10px;"
+                "padding:4px 10px;font-weight:700;font-size:0.82rem;color:#272343;"
+                "text-align:center;margin-top:3px;'>✨ 무제한</div>",
+                unsafe_allow_html=True,
+            )
+        elif remaining > 0:
+            st.markdown(
+                f"<div style='background:#e3f6f5;border:2px solid #272343;border-radius:10px;"
+                f"padding:4px 10px;font-weight:700;font-size:0.82rem;color:#272343;"
+                f"text-align:center;margin-top:3px;'>오늘 {remaining}회 남음</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div style='background:#fee2e2;border:2px solid #dc2626;border-radius:10px;"
+                "padding:4px 10px;font-weight:700;font-size:0.82rem;color:#dc2626;"
+                "text-align:center;margin-top:3px;'>오늘 사용완료</div>",
+                unsafe_allow_html=True,
+            )
+    with c3:
+        if st.button("로그아웃", key="logout_top", use_container_width=True):
+            _logout()
+    st.divider()
 
 
 # ──────────────────────────────────────────────
@@ -460,88 +519,6 @@ def call_gemini(uploaded_file, question: str, api_key: str, yongshin: str = "aut
 
 
 # ──────────────────────────────────────────────
-# 사이드바
-# ──────────────────────────────────────────────
-def sidebar(auth_enabled: bool, email: str, is_owner: bool, remaining: int) -> str:
-    with st.sidebar:
-
-        # ── 사용자 정보 (로그인 시) ─────────────
-        if auth_enabled and email:
-            name = st.session_state.get("auth_name", "") or email.split("@")[0]
-            st.markdown(
-                f"<div style='padding:8px 0 6px;'>"
-                f"<div style='font-weight:700;color:#272343;"
-                f"font-size:0.93rem;'>👤 {name}</div>"
-                f"<div style='font-size:0.78rem;color:#6b7280;"
-                f"margin-top:2px;'>{email}</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-            if is_owner:
-                st.success("✨ 관리자 — 무제한 사용")
-            elif remaining > 0:
-                st.info(f"오늘 남은 해석: **{remaining}회**")
-            else:
-                st.warning("오늘 사용량(3회)을 모두 사용했습니다.")
-
-            if st.button("로그아웃", key="logout_btn", use_container_width=True):
-                _logout()
-
-            st.divider()
-
-        # ── API 키 설정 ─────────────────────────
-        st.markdown("### ⚙️ 설정")
-
-        secret_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
-        env_key = os.getenv("GEMINI_API_KEY", "")
-        preset_key = secret_key or env_key
-
-        if preset_key:
-            st.success("✅ API 키 자동 감지됨")
-            api_key = preset_key
-        elif auth_enabled:
-            st.error("⚠️ 관리자: Secrets에 GEMINI_API_KEY를 설정해주세요.")
-            api_key = ""
-        else:
-            st.markdown(
-                "**무료** Google Gemini API 키가 필요합니다.\n\n"
-                "👉 **[Google AI Studio → API 키 발급](https://aistudio.google.com/apikey)**"
-            )
-            api_key = st.text_input(
-                "Gemini API Key",
-                type="password",
-                placeholder="AIzaSy...",
-            )
-            if api_key:
-                st.success("✅ API 키 입력됨")
-
-        st.divider()
-        st.markdown("""
-### 📖 사용 방법
-1. 육효 앱에서 괘를 뽑으세요.
-2. 화면을 캡처해서 업로드하세요.
-3. 질문을 입력하세요.
-4. **해석하기** 버튼을 누르세요.
-
-### 💡 질문 예시
-- 이번 달 안에 취업이 될까요?
-- 남자친구와 재회할 수 있을까요?
-- 사업 투자를 해도 괜찮을까요?
-- 소송에서 내가 이길 수 있을까요?
-        """)
-        if not auth_enabled:
-            st.markdown("""
-### 🆓 Gemini 무료 한도
-- 하루 1,500회 / 분당 15회
-- 카드 등록 불필요
-            """)
-        st.caption("powered by Google Gemini 3.5 Flash")
-
-    return api_key
-
-
-# ──────────────────────────────────────────────
 # 퀴즈
 # ──────────────────────────────────────────────
 def _lec_quiz_key(lec_num: int, q_idx: int) -> str:
@@ -687,6 +664,128 @@ def _scroll_to_top():
 
 
 # ──────────────────────────────────────────────
+# 다운로드 — 마크다운 → HTML 변환
+# ──────────────────────────────────────────────
+def _md_to_html(text: str) -> str:
+    """마크다운 텍스트를 다운로드 카드용 인라인 HTML로 변환."""
+    lines = text.split('\n')
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        # HR
+        if re.match(r'^-{3,}$', stripped):
+            out.append('<hr>')
+            continue
+        # h2
+        m = re.match(r'^## (.+)', line)
+        if m:
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', m.group(1))
+            out.append(f'<h2>{content}</h2>')
+            continue
+        # h3
+        m = re.match(r'^### (.+)', line)
+        if m:
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', m.group(1))
+            out.append(f'<h3>{content}</h3>')
+            continue
+        # blockquote
+        m = re.match(r'^> (.+)', line)
+        if m:
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', m.group(1))
+            out.append(f'<blockquote>{content}</blockquote>')
+            continue
+        # bullet list
+        m = re.match(r'^[*\-] (.+)', line)
+        if m:
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', m.group(1))
+            out.append(f'<li style="margin:2px 0 2px 16px;">{content}</li>')
+            continue
+        # numbered list
+        m = re.match(r'^\d+\. (.+)', line)
+        if m:
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', m.group(1))
+            out.append(f'<li style="margin:2px 0 2px 16px;">{content}</li>')
+            continue
+        # empty line
+        if not stripped:
+            out.append('<div style="height:5px"></div>')
+            continue
+        # normal paragraph
+        content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
+        out.append(f'<p style="margin:4px 0;line-height:1.7;">{content}</p>')
+    return '\n'.join(out)
+
+
+def _render_download_button(question: str, result: str):
+    """해석 결과를 이미지로 저장하는 버튼 (html2canvas)."""
+    today_str = date.today().strftime("%Y%m%d")
+    safe_q = re.sub(r'[\\/:"*?<>|\n\r]', '', question[:20]).strip().replace(' ', '_')
+    filename = f"{today_str}_{safe_q}.png"
+
+    result_html = _md_to_html(result)
+    q_safe = (question
+               .replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+               .replace('\n', '<br>'))
+
+    # HTML template — placeholder replacement avoids f-string issues with { } in result
+    tmpl = """<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+body{margin:0;padding:8px;background:#fffffe;font-family:-apple-system,'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-size:13px;}
+#card{position:absolute;left:-10000px;top:0;width:700px;padding:28px;background:#fffffe;box-sizing:border-box;}
+.app-hdr{background:#272343;border-radius:14px;padding:14px 18px;margin-bottom:18px;}
+.app-hdr-t{font-family:'Montserrat',sans-serif;font-weight:900;font-size:1.1rem;color:#ffd803;}
+.app-hdr-s{font-size:0.77rem;color:#bae8e8;margin-top:3px;}
+.q-box{background:#e3f6f5;border:2px solid #272343;border-radius:12px;padding:12px 16px;margin-bottom:16px;box-shadow:4px 4px 0 #bae8e8;}
+.q-lbl{font-size:0.73rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.q-txt{font-weight:700;font-size:0.95rem;color:#272343;line-height:1.5;}
+.res-box{background:#fffffe;border:2px solid #272343;border-radius:12px;padding:16px 20px;box-shadow:5px 5px 0 #bae8e8;font-size:0.85rem;color:#2d334a;line-height:1.72;}
+#card h2{font-size:.93rem;font-weight:800;color:#272343;margin:14px 0 5px;}
+#card h3{font-size:.85rem;font-weight:700;color:#272343;margin:10px 0 4px;}
+#card p{margin:4px 0;line-height:1.7;}
+#card hr{border:none;border-top:1px solid #e5e7eb;margin:10px 0;}
+#card blockquote{border-left:3px solid #ffd803;padding:7px 12px;background:#fffde7;margin:8px 0;font-weight:600;color:#272343;}
+#card strong{font-weight:700;color:#272343;}
+.footer{margin-top:14px;text-align:center;font-size:.7rem;color:#9ca3af;}
+#dl-btn{display:block;width:100%;padding:11px 0;background:#ffd803;color:#272343;font-weight:700;font-size:.93rem;border:2px solid #272343;border-radius:12px;cursor:pointer;box-shadow:4px 4px 0 #272343;font-family:inherit;transition:transform .1s,box-shadow .1s;}
+#dl-btn:hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 #272343;}
+#dl-btn:active{transform:translate(1px,1px);box-shadow:2px 2px 0 #272343;}
+#dl-btn:disabled{background:#e5e7eb;color:#9ca3af;border-color:#d1d5db;box-shadow:none;cursor:default;}
+</style></head>
+<body>
+<div id="card">
+  <div class="app-hdr"><div class="app-hdr-t">☯ 육효의 세계</div><div class="app-hdr-s">AI 육효 해석 결과</div></div>
+  <div class="q-box"><div class="q-lbl">질문</div><div class="q-txt">__QUESTION__</div></div>
+  <div class="res-box">__RESULT__</div>
+  <div class="footer">육효의 세계 · __TODAY__ · powered by Google Gemini</div>
+</div>
+<button id="dl-btn" onclick="downloadImg()">📥 이미지로 저장</button>
+<script>
+function downloadImg(){
+  var btn=document.getElementById('dl-btn');
+  btn.textContent='⏳ 이미지 생성 중...'; btn.disabled=true;
+  html2canvas(document.getElementById('card'),{scale:2,useCORS:true,backgroundColor:'#fffffe',logging:false,width:700,windowWidth:700}).then(function(canvas){
+    var a=document.createElement('a'); a.download='__FILENAME__'; a.href=canvas.toDataURL('image/png');
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    btn.textContent='✅ 저장 완료!';
+    setTimeout(function(){btn.textContent='📥 이미지로 저장';btn.disabled=false;},2500);
+  }).catch(function(){btn.textContent='📥 이미지로 저장';btn.disabled=false;});
+}
+</script>
+</body></html>"""
+
+    html_content = (tmpl
+                    .replace("__QUESTION__", q_safe)
+                    .replace("__RESULT__", result_html)
+                    .replace("__FILENAME__", filename)
+                    .replace("__TODAY__", today_str))
+    components.html(html_content, height=60)
+
+
+# ──────────────────────────────────────────────
 # 강의 페이지
 # ──────────────────────────────────────────────
 def page_lecture():
@@ -823,6 +922,9 @@ def page_lecture():
 # ──────────────────────────────────────────────
 def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, remaining: int):
 
+    # ── 사용자 정보 바 ────────────────────────
+    _render_user_bar(email, is_owner, remaining)
+
     # ── 육효 해석 카드 ────────────────────────
     with st.container(border=True):
         st.markdown("### 🔮 육효 해석")
@@ -904,7 +1006,7 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
         )
 
         if not api_key:
-            st.caption("⬅️ 사이드바에서 API 키를 입력해주세요.")
+            st.caption("⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요.")
         elif not uploaded:
             st.caption("이미지를 업로드해주세요.")
         elif not question.strip():
@@ -924,6 +1026,7 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
                 with st.container(border=True):
                     st.subheader("🌟 해석 결과")
                     st.markdown(result)
+                _render_download_button(question.strip(), result)
             except Exception as e:
                 err = str(e)
                 if "API_KEY_INVALID" in err or "api key" in err.lower():
@@ -968,7 +1071,7 @@ def main():
 
     inject_css()
 
-    api_key = sidebar(AUTH_ENABLED, email, is_owner, remaining)
+    api_key = _get_api_key()
 
     if st.session_state.page == "main":
         st.markdown(HERO_HTML, unsafe_allow_html=True)

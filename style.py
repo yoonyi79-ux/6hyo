@@ -142,6 +142,7 @@ p, li {
   font-size: 0.97rem !important;
   padding: 12px 24px !important;
   letter-spacing: 0.01em !important;
+  white-space: nowrap !important;
   cursor: pointer !important;
   box-shadow: var(--shadow-flat-md) !important;
   transition: transform 0.12s ease, box-shadow 0.12s ease !important;
