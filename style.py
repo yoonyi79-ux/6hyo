@@ -293,24 +293,15 @@ p, li {
 }
 
 /* ══════════════════════════════════════
-   Radio (강의 선택)
+   Radio — 퀴즈용 (clean, no card style)
 ══════════════════════════════════════ */
-.stRadio label {
-  background: var(--bg) !important;
-  border: 2px solid var(--border) !important;
-  border-radius: var(--r-md) !important;
-  padding: 12px 18px !important;
-  margin-bottom: 6px !important;
+.stRadio [role="radiogroup"] label {
   cursor: pointer !important;
-  transition: border-color 0.15s, background 0.15s, transform 0.15s !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
+  padding: 6px 4px !important;
+  transition: color 0.15s !important;
 }
-.stRadio label:hover {
-  border-color: var(--stroke) !important;
-  background: var(--bg-sec) !important;
-  transform: translateX(4px) !important;
+.stRadio [role="radiogroup"] label:hover {
+  color: var(--head) !important;
 }
 
 /* ══════════════════════════════════════
@@ -422,28 +413,6 @@ HERO_HTML = """
     line-height: 1.6;
     font-family: 'Pretendard', sans-serif;
   ">하늘이 흔들리는 순간을 여섯 개의 획으로 읽는 오래된 지혜</div>
-  <div style="display:flex; flex-wrap:wrap; gap:8px;">
-    <span style="
-      background:#fffffe; border:2px solid #272343; border-radius:50px;
-      padding:5px 13px; font-size:0.81rem; font-weight:700; color:#272343;
-      box-shadow:2px 2px 0 #272343; display:inline-flex; align-items:center; gap:6px;
-    "><i class='fa-solid fa-bolt' style='color:#ffd803;'></i> Gemini 3.5 Flash</span>
-    <span style="
-      background:#fffffe; border:2px solid #272343; border-radius:50px;
-      padding:5px 13px; font-size:0.81rem; font-weight:700; color:#272343;
-      box-shadow:2px 2px 0 #272343; display:inline-flex; align-items:center; gap:6px;
-    "><i class='fa-solid fa-graduation-cap' style='color:#ffd803;'></i> 7강 강의 수록</span>
-    <span style="
-      background:#fffffe; border:2px solid #272343; border-radius:50px;
-      padding:5px 13px; font-size:0.81rem; font-weight:700; color:#272343;
-      box-shadow:2px 2px 0 #272343; display:inline-flex; align-items:center; gap:6px;
-    "><i class='fa-solid fa-lock' style='color:#ffd803;'></i> API 키 암호화 보관</span>
-    <span style="
-      background:#fffffe; border:2px solid #272343; border-radius:50px;
-      padding:5px 13px; font-size:0.81rem; font-weight:700; color:#272343;
-      box-shadow:2px 2px 0 #272343; display:inline-flex; align-items:center; gap:6px;
-    "><i class='fa-solid fa-mobile-screen' style='color:#ffd803;'></i> 모바일 최적화</span>
-  </div>
 </div>
 """
 
