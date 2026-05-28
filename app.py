@@ -105,13 +105,14 @@ def _logout():
 # API 키 헬퍼
 # ──────────────────────────────────────────────
 def _get_api_key() -> str:
-    """Secrets 또는 환경변수에서 Gemini API 키 반환."""
+    """Streamlit Secrets → 환경변수 순서로 Gemini API 키 반환."""
     try:
-        secret_key = st.secrets.get("GEMINI_API_KEY", "")
+        key = st.secrets["GEMINI_API_KEY"]
+        if key:
+            return key
     except Exception:
-        secret_key = ""
-    env_key = os.getenv("GEMINI_API_KEY", "")
-    return secret_key or env_key
+        pass
+    return os.getenv("GEMINI_API_KEY", "")
 
 
 # ──────────────────────────────────────────────
@@ -1005,9 +1006,7 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
             disabled=not ready,
         )
 
-        if not api_key:
-            st.caption("⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요.")
-        elif not uploaded:
+        if not uploaded:
             st.caption("이미지를 업로드해주세요.")
         elif not question.strip():
             st.caption("질문을 입력해주세요.")
