@@ -132,6 +132,13 @@ p, li {
 /* ══════════════════════════════════════
    Buttons — Yellow Neo-Brutalist
 ══════════════════════════════════════ */
+
+/* 버튼 컨테이너 — auto-width 버튼을 중앙 정렬 */
+.stButton {
+  display: flex !important;
+  justify-content: center !important;
+}
+
 .stButton > button {
   background: var(--accent) !important;
   color: var(--head) !important;
@@ -140,7 +147,7 @@ p, li {
   font-family: var(--font-ko) !important;
   font-weight: 700 !important;
   font-size: 0.97rem !important;
-  padding: 12px 24px !important;
+  padding: 10px 18px !important;
   letter-spacing: 0.01em !important;
   white-space: nowrap !important;
   cursor: pointer !important;

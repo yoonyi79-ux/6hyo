@@ -116,48 +116,55 @@ def _get_api_key() -> str:
 
 
 # ──────────────────────────────────────────────
-# 사용자 정보 바 (메인 페이지 상단)
+# 사용자 정보 바 (Streamlit 상단 헤더 오버레이)
 # ──────────────────────────────────────────────
 def _render_user_bar(email: str, is_owner: bool, remaining: int):
-    """메인 페이지 상단 — 이름·이메일·사용량 뱃지·로그아웃 버튼."""
+    """Streamlit 상단 헤더에 이름·뱃지·로그아웃을 고정 오버레이로 렌더링."""
     if not AUTH_ENABLED or not email:
         return
     name = st.session_state.get("auth_name", "") or email.split("@")[0]
-    c1, c2, c3 = st.columns([5, 3, 1])
-    with c1:
-        st.markdown(
-            f"<div style='padding:5px 0;line-height:1.4;'>"
-            f"<span style='font-weight:700;color:#272343;font-size:0.93rem;'>👤 {name}</span>"
-            f"<span style='color:#6b7280;font-size:0.78rem;margin-left:8px;'>({email})</span>"
-            f"</div>",
-            unsafe_allow_html=True,
+
+    if is_owner:
+        badge = (
+            "<span style='background:#ffd803;border:2px solid #272343;border-radius:7px;"
+            "padding:3px 6px;font-weight:700;font-size:0.78rem;color:#272343;"
+            "white-space:nowrap;line-height:1;'>✨ 무제한</span>"
         )
-    with c2:
-        if is_owner:
-            st.markdown(
-                "<div style='background:#ffd803;border:2px solid #272343;border-radius:10px;"
-                "padding:4px 10px;font-weight:700;font-size:0.82rem;color:#272343;"
-                "text-align:center;margin-top:3px;'>✨ 무제한</div>",
-                unsafe_allow_html=True,
-            )
-        elif remaining > 0:
-            st.markdown(
-                f"<div style='background:#e3f6f5;border:2px solid #272343;border-radius:10px;"
-                f"padding:4px 10px;font-weight:700;font-size:0.82rem;color:#272343;"
-                f"text-align:center;margin-top:3px;'>오늘 {remaining}회 남음</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                "<div style='background:#fee2e2;border:2px solid #dc2626;border-radius:10px;"
-                "padding:4px 10px;font-weight:700;font-size:0.82rem;color:#dc2626;"
-                "text-align:center;margin-top:3px;'>오늘 사용완료</div>",
-                unsafe_allow_html=True,
-            )
-    with c3:
-        if st.button("로그아웃", key="logout_top", use_container_width=True):
-            _logout()
-    st.divider()
+    elif remaining > 0:
+        badge = (
+            f"<span style='background:#e3f6f5;border:2px solid #272343;border-radius:7px;"
+            f"padding:3px 6px;font-weight:700;font-size:0.78rem;color:#272343;"
+            f"white-space:nowrap;line-height:1;'>오늘 {remaining}회 남음</span>"
+        )
+    else:
+        badge = (
+            "<span style='background:#fee2e2;border:2px solid #dc2626;border-radius:7px;"
+            "padding:3px 6px;font-weight:700;font-size:0.78rem;color:#dc2626;"
+            "white-space:nowrap;line-height:1;'>오늘 사용완료</span>"
+        )
+
+    st.markdown(
+        f"""<div style='
+            position:fixed;top:0;right:0;height:58px;
+            display:flex;align-items:center;gap:10px;padding:0 18px;
+            z-index:99999;
+        '>
+            <span style='font-weight:700;color:#272343;font-size:0.87rem;
+                white-space:nowrap;'>👤 {name}</span>
+            <span style='color:#6b7280;font-size:0.77rem;
+                white-space:nowrap;'>({email})</span>
+            {badge}
+            <a href='?logout=1' style='
+                display:inline-block;
+                background:#272343;color:#ffd803;
+                border:2px solid #272343;border-radius:8px;
+                padding:4px 10px;font-weight:700;font-size:0.82rem;
+                text-decoration:none;white-space:nowrap;
+                box-shadow:3px 3px 0 #bae8e8;font-family:inherit;
+            '>로그아웃</a>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 
 # ──────────────────────────────────────────────
@@ -923,9 +930,6 @@ def page_lecture():
 # ──────────────────────────────────────────────
 def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, remaining: int):
 
-    # ── 사용자 정보 바 ────────────────────────
-    _render_user_bar(email, is_owner, remaining)
-
     # ── 육효 해석 카드 ────────────────────────
     with st.container(border=True):
         st.markdown("### 🔮 육효 해석")
@@ -974,11 +978,11 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
             st.caption("AI가 자동으로 선택합니다. 육효를 어느 정도 아신다면 직접 지정해 보세요.")
             yongshin_map = {
                 "AI가 자동 선택 (권장)": "auto",
-                "財(재) — 재물 · 사업 · 연애(남성)": "財",
-                "官(관) — 직장 · 승진 · 남편(여성) · 건강": "官",
-                "父(부) — 문서 · 시험 · 계약 · 부동산": "父",
-                "孫(손) — 자녀 · 건강 · 해결 · 복": "孫",
-                "兄(형) — 동료 · 경쟁 · 협력": "兄",
+                "처재(妻財) — 재물 · 사업 · 연애(남성)": "財",
+                "관귀(官鬼) — 직장 · 승진 · 남편(여성) · 건강": "官",
+                "부모(父母) — 문서 · 시험 · 계약 · 부동산": "父",
+                "자손(子孫) — 자녀 · 건강 · 해결 · 복": "孫",
+                "형제(兄弟) — 동료 · 경쟁 · 협력": "兄",
             }
             ys_label = st.selectbox(
                 "용신 선택",
@@ -1006,7 +1010,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
             disabled=not ready,
         )
 
-        if not uploaded:
+        if not api_key:
+            st.warning("⚠️ Secrets에서 GEMINI_API_KEY를 읽지 못했습니다. Streamlit Cloud > Settings > Secrets를 확인하세요.")
+        elif not uploaded:
             st.caption("이미지를 업로드해주세요.")
         elif not question.strip():
             st.caption("질문을 입력해주세요.")
@@ -1039,9 +1045,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
 
     # ── 강의 이동 버튼 ────────────────────────
     st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
-    _, mid, _ = st.columns([2, 1, 2])
+    _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        if st.button("📚 육효의 모든 것", use_container_width=True, key="go_lecture"):
+        if st.button("📚 육효의 모든 것", key="go_lecture"):
             st.session_state.page = "lecture"
             st.rerun()
 
@@ -1051,6 +1057,13 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
 # ──────────────────────────────────────────────
 def main():
     _init()
+
+    # ── 로그아웃 링크 처리 (?logout=1) ─────────
+    if st.query_params.get("logout"):
+        st.query_params.clear()
+        st.session_state.pop("auth_email", None)
+        st.session_state.pop("auth_name", None)
+        st.rerun()
 
     # ── Auth Gate ────────────────────────────
     if AUTH_ENABLED:
@@ -1069,8 +1082,10 @@ def main():
         remaining = 999
 
     inject_css()
-
     api_key = _get_api_key()
+
+    # ── 상단 헤더 오버레이 (모든 페이지에서 표시) ─
+    _render_user_bar(email, is_owner, remaining)
 
     if st.session_state.page == "main":
         st.markdown(HERO_HTML, unsafe_allow_html=True)
