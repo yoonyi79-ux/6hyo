@@ -105,65 +105,101 @@ def _logout():
 # API 키 헬퍼
 # ──────────────────────────────────────────────
 def _get_api_key() -> str:
-    """Streamlit Secrets → 환경변수 순서로 Gemini API 키 반환."""
+    """Streamlit Secrets → 환경변수 순서로 Gemini API 키 반환.
+    여러 접근 방식을 순차 시도해 최대한 안정적으로 읽는다."""
+    # 방법 1: .get() — KeyError를 피하는 가장 안전한 방법
     try:
-        key = st.secrets["GEMINI_API_KEY"]
-        if key:
-            return key
+        key = st.secrets.get("GEMINI_API_KEY", "")
+        if key and str(key).strip():
+            return str(key).strip()
     except Exception:
         pass
-    return os.getenv("GEMINI_API_KEY", "")
+    # 방법 2: 딕셔너리 직접 접근
+    try:
+        key = st.secrets["GEMINI_API_KEY"]
+        if key and str(key).strip():
+            return str(key).strip()
+    except Exception:
+        pass
+    # 방법 3: getattr 접근 (섹션 없는 최상위 키)
+    try:
+        key = getattr(st.secrets, "GEMINI_API_KEY", "")
+        if key and str(key).strip():
+            return str(key).strip()
+    except Exception:
+        pass
+    # 방법 4: 환경변수 폴백
+    return os.getenv("GEMINI_API_KEY", "").strip()
 
 
 # ──────────────────────────────────────────────
-# 사용자 정보 바 (Streamlit 상단 헤더 오버레이)
+# 사용자 정보 바 (window.parent DOM에 JS로 주입)
 # ──────────────────────────────────────────────
 def _render_user_bar(email: str, is_owner: bool, remaining: int):
-    """Streamlit 상단 헤더에 이름·뱃지·로그아웃을 고정 오버레이로 렌더링."""
+    """Streamlit 상단 헤더 영역에 이름·뱃지·로그아웃을 오버레이로 렌더링.
+    st.markdown() position:fixed는 Streamlit CSS stacking context에 갇히므로
+    components.html()로 window.parent.document.body에 직접 DOM 삽입한다."""
     if not AUTH_ENABLED or not email:
         return
     name = st.session_state.get("auth_name", "") or email.split("@")[0]
 
     if is_owner:
-        badge = (
+        badge_html = (
             "<span style='background:#ffd803;border:2px solid #272343;border-radius:7px;"
-            "padding:3px 6px;font-weight:700;font-size:0.78rem;color:#272343;"
-            "white-space:nowrap;line-height:1;'>✨ 무제한</span>"
+            "padding:3px 9px;font-weight:700;font-size:13px;color:#272343;"
+            "white-space:nowrap;line-height:1.5;'>✨ 무제한</span>"
         )
     elif remaining > 0:
-        badge = (
+        badge_html = (
             f"<span style='background:#e3f6f5;border:2px solid #272343;border-radius:7px;"
-            f"padding:3px 6px;font-weight:700;font-size:0.78rem;color:#272343;"
-            f"white-space:nowrap;line-height:1;'>오늘 {remaining}회 남음</span>"
+            f"padding:3px 9px;font-weight:700;font-size:13px;color:#272343;"
+            f"white-space:nowrap;line-height:1.5;'>오늘 {remaining}회 남음</span>"
         )
     else:
-        badge = (
+        badge_html = (
             "<span style='background:#fee2e2;border:2px solid #dc2626;border-radius:7px;"
-            "padding:3px 6px;font-weight:700;font-size:0.78rem;color:#dc2626;"
-            "white-space:nowrap;line-height:1;'>오늘 사용완료</span>"
+            "padding:3px 9px;font-weight:700;font-size:13px;color:#dc2626;"
+            "white-space:nowrap;line-height:1.5;'>오늘 사용완료</span>"
         )
 
-    st.markdown(
-        f"""<div style='
-            position:fixed;top:0;right:0;height:58px;
-            display:flex;align-items:center;gap:10px;padding:0 18px;
-            z-index:99999;
-        '>
-            <span style='font-weight:700;color:#272343;font-size:0.87rem;
-                white-space:nowrap;'>👤 {name}</span>
-            <span style='color:#6b7280;font-size:0.77rem;
-                white-space:nowrap;'>({email})</span>
-            {badge}
-            <a href='?logout=1' style='
-                display:inline-block;
-                background:#272343;color:#ffd803;
-                border:2px solid #272343;border-radius:8px;
-                padding:4px 10px;font-weight:700;font-size:0.82rem;
-                text-decoration:none;white-space:nowrap;
-                box-shadow:3px 3px 0 #bae8e8;font-family:inherit;
-            '>로그아웃</a>
-        </div>""",
-        unsafe_allow_html=True,
+    inner_html = (
+        f"<span style='font-weight:700;color:#272343;font-size:14px;"
+        f"white-space:nowrap;'>👤 {name}</span>"
+        f"<span style='color:#6b7280;font-size:12px;white-space:nowrap;"
+        f"margin:0 4px;'>({email})</span>"
+        f"{badge_html}"
+        f"<a href='?logout=1' style='display:inline-block;background:#272343;"
+        f"color:#ffd803;border:2px solid #272343;border-radius:8px;"
+        f"padding:4px 10px;font-weight:700;font-size:13px;text-decoration:none;"
+        f"white-space:nowrap;box-shadow:3px 3px 0 #bae8e8;margin-left:4px;"
+        f"'>로그아웃</a>"
+    )
+
+    # json.dumps → JS 문자열 리터럴에 안전하게 임베드
+    inner_js = json.dumps(inner_html)
+
+    components.html(
+        f"""<script>
+(function(){{
+    try {{
+        var old = window.parent.document.getElementById('hyo-topbar');
+        if (old) old.remove();
+        var bar = window.parent.document.createElement('div');
+        bar.id = 'hyo-topbar';
+        bar.style.cssText = [
+            'position:fixed', 'top:0', 'right:0', 'height:58px',
+            'display:flex', 'align-items:center', 'gap:8px', 'padding:0 18px',
+            'z-index:2147483647', 'box-sizing:border-box',
+            "font-family:-apple-system,'Malgun Gothic','Apple SD Gothic Neo',sans-serif"
+        ].join(';') + ';';
+        bar.innerHTML = {inner_js};
+        window.parent.document.body.appendChild(bar);
+    }} catch(e) {{
+        console.warn('[hyo] topbar inject failed:', e);
+    }}
+}})();
+</script>""",
+        height=0,
     )
 
 
@@ -304,11 +340,12 @@ SYSTEM_PROMPT = """
 각 효마다:
   - 육친: 兄(형제) / 孫(자손) / 財(처재) / 官(관귀) / 父(부모)
   - 지지(地支): 子丑寅卯辰巳午未申酉戌亥 중 하나
+  - 천간(天干): 甲乙丙丁戊己庚辛壬癸 중 하나 (표시되는 경우)
   - 오행: 木火土金水
   - 世(세효 = 나) 또는 應(응효 = 상대) 표시
   - 동효(動爻) 여부: 빨간 빗금(×), 굵은 표시, 또는 "동" 표기
   - 변효(變爻): 동효가 변한 후의 육친·지지 (→ 오른쪽에 표시)
-  - 장생12신: 長生·沐浴·冠帶·臨官·帝旺·衰·病·死·墓·絶·胎·養
+  - 십이포태(十二胞胎): 長生·沐浴·冠帶·臨官·帝旺·衰·病·死·墓·絶·胎·養
 
 [보조 정보]
   - 월건(月建): 점을 친 달의 지지
@@ -385,30 +422,106 @@ SYSTEM_PROMPT = """
 - 土(토): 辰(진)·戌(술)·丑(축)·未(미)
 - 金(금): 申(신)·酉(유)  /  水(수): 子(자)·亥(해)
 
-## 6. 특수 상태 — 5대 비지
+## 6. 5대 비지(非支) — 특수 상태 판독
 
-| 상태 | 핵심 의미 | 현실 번역 |
+| 상태 | 발생 조건 | 현실 번역 |
 |------|---------|----------|
-| 공망(空亡) | 비어있음·허상 | 말뿐·약속 펑크·속임·실체 없음 |
-| 월파(月破) | 이번 달 깨짐 | 이달은 절대 안 됨 |
-| 암동(暗動) | 겉은 조용·속은 움직임 | 몰래 진행·숨은 감정 |
-| 입묘(入墓) | 갇혀서 못 나옴 | 연락 두절·잠수·막힘 |
-| 복신(伏神) | 숨은 효 | 드러나지 않은 진실 |
+| 공망(空亡) | 월건에서 정해진 두 글자에 해당 | 속인다·말뿐·약속 펑크·실체 없음 |
+| 월파(月破) | 월건이 해당 효를 충(冲) | 이달만큼은 절대 안 됨 |
+| 암동(暗動) | 정효(靜爻)인데 일진이 충함 | 겉은 조용, 속으로 몰래 진행 중 |
+| 묘고(墓庫) | 十二胞胎 중 '墓'에 해당 | 갇혀서 못 나옴·답답함·연락두절 |
+| 복신(伏神) | 공망·월파·암동으로 동하게 됨 | 드러나지 않은 숨은 진실이 발동 |
 
 합(合): 결합·묶임 → 좋으면 계약, 나쁘면 집착·구속
 충(沖): 깨짐·이동 → 좋으면 돌파, 나쁘면 파탄·이별
 형(刑): 스트레스·법적 마찰
 
-## 7. 실전 해석 순서
+## 7. 십이포태(十二胞胎) — 효의 생명력
+
+각 효가 월건·일진과의 관계로 결정되는 생명 단계.
+이 단계로 해당 효가 현재 '힘이 넘치는지' vs '죽어가는지'를 판단한다.
+
+**6길신(吉神) — 힘이 있는 상태:**
+| 단계 | 한자 | 현실 번역 |
+|------|------|----------|
+| 養(양) | 태어나기 전 양육 | 준비·성장 직전, 아직 기회 있음 |
+| 長生(장생) | 막 태어남 | 새로운 시작·신선한 에너지 |
+| 沐浴(목욕) | 씻기 단계 | 변동·불안정하지만 활기참 |
+| 冠帶(관대) | 성인식·취직 | 돈·월급·녹봉의 단계, 재물운 |
+| 臨官(임관) | 직장 합격 | 관직·직장 합격·도전 성공 |
+| 帝旺(제왕) | 최전성기 | 가장 강함·주도권 완전 장악 |
+
+**6살신(殺神) — 힘이 약한 상태:**
+| 단계 | 한자 | 현실 번역 |
+|------|------|----------|
+| 衰(쇠) | 쇠퇴 시작 | 전성기 지남·서서히 힘 빠짐 |
+| 病(병) | 병든 상태 | 문제·장애·건강 이상 |
+| 死(사) | 죽음 | 완전히 막힘·기운 없음 |
+| 墓(묘) | 묘지 | 갇힘·연락두절·잠수·막힘 |
+| 絶(절) | 끊어짐 | 인연 단절·포기·종료 |
+| 胎(태) | 잉태 | 기본적으로 나쁨 (임신 점에서만 길) |
+
+> 실전 적용: 용신이 帝旺·長生이면 강한 힘, 死·墓·絶이면 힘이 없는 상태.
+> 세효가 6살신이면 내가 지쳐있거나 불리한 상황.
+
+## 8. 효위(爻位) — 공간·환경 해석
+
+각 효는 특정 공간/상황을 상징한다:
+
+| 효위 | 상징 공간 | 현실 의미 |
+|-----|---------|----------|
+| 上爻(상효 6효) | 천신·하늘 영역 | 외국·타지·먼 곳·신의 영역 |
+| 五爻(5효) | 도로·가족 영역 | 이동·가족 관계·사회적 위치 |
+| 四爻(4효) | 대문 영역 | 외부와의 접점·관귀/귀신 영역 |
+| 三爻(3효) | 현관문 영역 | 내외의 경계·귀신망상 영역 |
+| 二爻(2효) | 안방·거실 | 가택효·동거·실질적 생활 공간 |
+| 初爻(초효 1효) | 방바닥·부엌·터 | 가장 기초·터주·뿌리 |
+
+## 9. 천간(天干) — 심리와 상황의 결 읽기
+
+천간은 표면적 심리와 상황의 '색깔'을 드러낸다.
+
+| 천간 | 오행 | 심리·상황 |
+|------|------|----------|
+| 甲·乙 | 木 | 새로운 시작·기획력·돌진·성장 욕구 |
+| 丙·丁 | 火 | 화려함·감정 폭발·명예욕·급한 성격 |
+| 戊·己 | 土 | 신용·타협·중재·안정·다소 느린 진행 |
+| 庚·辛 | 金 | 결단력·냉정함·법적 공방·거래 |
+| 壬·癸 | 水 | 물밑 작업·비밀 계획·유연함·의심 |
+
+**특수 규칙:**
+- 庚(경) + 문서효(父) = 소송·법적 분쟁 경고
+- 천간합(甲己·乙庚·丙辛·丁壬·戊癸): 겉은 싸우나 속으로 타협 중
+- 천간충(甲庚·乙辛·丙壬·丁癸·戊甲): 명분 충돌·명예 손상
+
+**지지 吉 + 천간 凶 조합**: 결과는 얻지만 과정이 힘들고 구설수 있음
+**천간 吉 + 지지 凶 조합**: 명분은 좋으나 실속이 없음
+
+## 10. 특수 괘 구조 — 판의 성격 진단
+
+이미지에서 전체 괘의 구조를 파악해 아래 특수 괘 여부를 반드시 확인하라:
+
+| 괘 이름 | 조건 | 핵심 의미 |
+|--------|------|----------|
+| 육충괘(六沖卦) | 1·4효, 2·5효, 3·6효가 모두 충(冲) | 속전속결·분산·결별·빠른 결론 |
+| 육합괘(六合卦) | 마주보는 효가 모두 합(合) | 끈끈한 묶임·장기화·집착 |
+| 복음괘(伏吟卦) | 동효의 오행 = 본효의 오행 | 진퇴양난·제자리걸음·막막함 |
+| 반음괘(反吟卦) | 변효 지지 = 본효 지지의 충 | 판이 계속 번복·막판 뒤집힘 |
+| 유혼괘(遊魂卦) | 특정 공식 구조 8괘 | 방황·중심 상실·이탈 충동 |
+| 귀혼괘(歸魂卦) | 유혼괘와 짝을 이루는 8괘 | 제자리 복귀·정착·회귀 |
+
+## 11. 실전 해석 순서 (강화판)
 
 1. 질문 확인 → 용신 선택
-2. 세효 상태 (강한가·공망인가)
-3. 용신 상태 (왕성한가·월파·공망인가)
-4. 동효 확인
-5. 동효↔용신 생극 관계
-6. 특수 상태 체크
-7. 타이밍 도출
-8. 현실 언어로 번역
+2. 특수 괘 구조 먼저 파악 (육충/육합/복음/반음/유혼/귀혼)
+3. 세효 상태 (십이포태 단계, 공망인가)
+4. 용신 상태 (십이포태 단계, 왕성한가·월파·공망인가)
+5. 동효 확인 및 용신과의 생극 관계
+6. 천간 분석 (어떤 색깔의 사건인가)
+7. 5대 비지 체크 (공망·월파·암동·묘고·복신)
+8. 타이밍 도출 (출공일·충실일·충개일·제복일)
+9. 개운 방향 도출 (방위·인물·타이밍)
+10. 현실 언어로 번역
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 📝  해석 출력 형식 (반드시 이 형식 사용)
@@ -420,10 +533,11 @@ SYSTEM_PROMPT = """
 
 - **월건 / 일진**: [값 또는 "확인 어려움"]
 - **공망**: [해당 지지 또는 "없음"]
-- **세효(나)**: [효 위치] [육친] [지지] — [상태]
-- **응효(상대)**: [효 위치] [육친] [지지] — [상태]
+- **세효(나)**: [효 위치] [육친] [지지] — [십이포태 단계] [상태]
+- **응효(상대)**: [효 위치] [육친] [지지] — [십이포태 단계] [상태]
 - **동효**: [몇 효, 육친, 지지] → 변효: [변화 결과]
 - **용신**: [육친] — [선택 이유]
+- **특수 괘 구조**: [해당 괘 또는 "없음"]
 
 ---
 
@@ -436,21 +550,29 @@ SYSTEM_PROMPT = """
 ## 🔮 상세 해석
 
 ### 지금 내 상황은?
-(세효 상태를 비유로 설명)
+(세효 상태와 십이포태 단계를 비유로 설명)
 
 ### 원하는 것(용신)의 상태는?
-(용신이 강한지·약한지·공망인지를 비유로)
+(용신의 십이포태 단계와 강약을 비유로 설명)
 
 ### 어떤 사건이 일어나고 있나요?
 (동효가 없으면 "조용한 상태". 있으면:
 ① 동효 육친이 무엇인지
 ② 동효가 용신을 생하는지 극하는지
 ③ 동효의 강도: 파란·빨간 생합 표시
-④ 변효 회두생/회두극 여부
-⑤ 종합 스토리)
+④ 변효 회두생/회두극·진신/퇴신 여부
+⑤ 천간이 드러내는 심리와 상황의 색깔
+⑥ 종합 스토리)
 
 ### 특별히 주의할 것
-(공망·월파·합·충·암동이 있으면 설명. 없으면 생략)
+(공망·월파·합·충·암동·묘고·복신·특수괘 구조가 있으면 설명. 없으면 생략)
+
+---
+
+## 🌿 십이포태 진단
+
+(용신과 세효의 십이포태 단계를 구체적으로 명시하고,
+그것이 현재 상황에 어떤 의미인지 일상 언어로 설명)
 
 ---
 
@@ -464,7 +586,27 @@ SYSTEM_PROMPT = """
 
 ## 🕐 타이밍
 
-(언제쯤 결과가 나타날지)
+(언제쯤 결과가 나타날지.
+가능하면 아래 기준으로 구체적 날짜/월 유형 제시:
+- **출공(出空)**: 공망인 글자의 날/달이 오면 현실화
+- **충실(沖實)**: 공망을 충하는 날/달이 오면 더 빨리 열림
+- **충개(沖開)**: 합으로 묶인 효를 충하는 날/달이 오면 풀림
+- **제복(制伏)**: 흉신을 극하는 오행의 날/달이 오면 전환점)
+
+---
+
+## 🧭 개운(開運) 방향
+
+(운을 여는 구체적 행동 지침. 아래 3가지로 나눠 제시:)
+
+**방위**: [도움이 되는 방향 — 지지별 방위 공식:
+子=북, 丑寅=동북, 卯=동, 辰巳=동남, 午=남, 未申=남서, 酉=서, 戌亥=북서]
+
+**인물(띠)**: [도움이 될 띠 — 용신을 생하거나 흉신을 제압하는 오행의 띠.
+육합쌍(자축/인해/묘술/진유/사신/오미)·삼합(申子辰/亥卯未/寅午戌/巳酉丑) 활용]
+
+**행동**: [공망이면 솔직하게 터놓기, 묘고이면 직접 만남 시도,
+월파이면 이달은 잠시 보류, 암동이면 먼저 연락해보기 등]
 
 ---
 
@@ -490,7 +632,11 @@ SYSTEM_PROMPT = """
 
 4. 따뜻하고 솔직하게: 나쁜 결과도 부드럽게, 대안 조언 포함
 
-5. 충분히 상세하게 (해석 본문 최소 600자 이상)
+5. 충분히 상세하게 (해석 본문 최소 800자 이상)
+
+6. 개운(開運) 섹션은 반드시 실질적이고 행동 가능한 내용으로 작성
+
+7. 십이포태 단계는 해당 효마다 6길신/6살신 중 어느 쪽인지 명확히 판단
 """
 
 
@@ -1011,7 +1157,16 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
         )
 
         if not api_key:
-            st.warning("⚠️ Secrets에서 GEMINI_API_KEY를 읽지 못했습니다. Streamlit Cloud > Settings > Secrets를 확인하세요.")
+            try:
+                secret_keys = list(st.secrets.keys())
+            except Exception:
+                secret_keys = ["(읽기 실패)"]
+            st.warning(
+                f"⚠️ GEMINI_API_KEY를 찾을 수 없습니다.  \n"
+                f"현재 Secrets에 등록된 키: `{secret_keys}`  \n"
+                "Streamlit Cloud › Settings › Secrets에서 **최상단 섹션 밖**에  \n"
+                "`GEMINI_API_KEY = \"AIzaSy...\"` 형태로 입력했는지 확인하세요."
+            )
         elif not uploaded:
             st.caption("이미지를 업로드해주세요.")
         elif not question.strip():
@@ -1045,9 +1200,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
 
     # ── 강의 이동 버튼 ────────────────────────
     st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
-    _, mid, _ = st.columns([1, 2, 1])
+    _, mid, _ = st.columns([3, 2, 3])
     with mid:
-        if st.button("📚 육효의 모든 것", key="go_lecture"):
+        if st.button("📚 육효의 모든 것", key="go_lecture", use_container_width=True):
             st.session_state.page = "lecture"
             st.rerun()
 
