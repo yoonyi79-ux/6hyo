@@ -1,6 +1,6 @@
 [client]
 # 우하단 "Manage app" 버튼 및 툴바 완전 비활성화
-toolbarMode = "minimal"
+toolbarMode = "viewer"
 
 # 에러 발생 시 스택 트레이스(소스 경로 등) 사용자에게 미노출
 showErrorDetails = false

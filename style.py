@@ -453,5 +453,34 @@ HERO_HTML = """
 """
 
 
+_HIDE_MANAGE_APP_JS = """
+<script>
+(function hideManageApp() {
+    function remove() {
+        // data-testid 기반
+        ['stAppDeployButton', 'stDeployButton', 'stStatusWidget'].forEach(function(id) {
+            var el = document.querySelector('[data-testid="' + id + '"]');
+            if (el) el.style.display = 'none';
+        });
+        // 텍스트 "Manage app" 포함 버튼/링크 제거
+        document.querySelectorAll('a, button, span, div').forEach(function(el) {
+            if ((el.textContent || '').trim() === 'Manage app') {
+                var target = el.closest('[class*="deploy"], [class*="toolbar"], [class*="bottom"]') || el;
+                target.style.display = 'none';
+            }
+        });
+        // 우하단 고정 영역 (Streamlit Cloud 전용)
+        document.querySelectorAll('[class*="deployButton"], [class*="stBottom"]').forEach(function(el) {
+            el.style.display = 'none';
+        });
+    }
+    remove();
+    // DOM 변경 감지 → 재실행
+    new MutationObserver(remove).observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+"""
+
 def inject_css():
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    st.markdown(_HIDE_MANAGE_APP_JS, unsafe_allow_html=True)
