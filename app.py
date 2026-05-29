@@ -1010,12 +1010,15 @@ def page_lecture():
         unsafe_allow_html=True,
     )
 
-    # ── 진도 도트 (클릭 가능 · 한 줄) ───────────
+    # ── 진도 도트 (한 줄 · 로그인 유지) ─────────
+    # <a href> 방식은 페이지 새로고침 → 세션 초기화 → 로그아웃 발생.
+    # 대신: 시각 도트(HTML) + 숨긴 Streamlit 버튼(11개) + JS 클릭 연결.
     cur = st.session_state.cur_lec
     max_ok = _max_unlocked()
 
+    # ① 시각 도트 — cursor:pointer, class="hyo-dot", href 없음
     dots_html = (
-        "<div style='display:flex;align-items:center;gap:0;"
+        "<div id='hyo-dots-row' style='display:flex;align-items:center;gap:0;"
         "flex-wrap:nowrap;overflow-x:auto;padding:4px 0 8px;'>"
     )
     for i in range(1, 12):
@@ -1026,21 +1029,18 @@ def page_lecture():
         elif i <= max_ok:
             bg, fg, bdr, symbol = "#e3f6f5", "#272343", "#272343", str(i)
         else:
-            # 미학습 — 시각적으로 dim, 클릭은 허용
             bg, fg, bdr, symbol = "#f3f4f6", "#c4c9d4", "#e0e4ed", str(i)
 
         dots_html += (
-            f"<a href='?goto_lec={i}' style='text-decoration:none;flex-shrink:0;'>"
-            f"<div style='width:28px;height:28px;background:{bg};"
-            f"border:2px solid {bdr};border-radius:50%;"
-            f"display:flex;align-items:center;justify-content:center;"
-            f"font-weight:700;font-size:0.7rem;color:{fg};cursor:pointer;' "
+            f"<div class='hyo-dot' data-lec='{i}' "
+            f"style='width:28px;height:28px;background:{bg};"
+            f"border:2px solid {bdr};border-radius:50%;cursor:pointer;"
+            f"display:inline-flex;align-items:center;justify-content:center;"
+            f"font-weight:700;font-size:0.7rem;color:{fg};flex-shrink:0;' "
             f"title='{i}강'>{symbol}</div>"
-            f"</a>"
         )
         if i < 11:
             if i == 7:
-                # 기초↔심화 구분 — 인라인 구분자
                 dots_html += (
                     "<div style='display:flex;align-items:center;flex-shrink:0;"
                     "margin:0 4px;gap:2px;'>"
@@ -1058,6 +1058,57 @@ def page_lecture():
                 )
     dots_html += "</div>"
     st.markdown(dots_html, unsafe_allow_html=True)
+
+    # ② 숨긴 Streamlit 버튼 — 세션 유지 방식으로 강 이동
+    _hcols = st.columns(11, gap="small")
+    for _i in range(1, 12):
+        with _hcols[_i - 1]:
+            if st.button(f"⊙{_i}", key=f"hbtn_{_i}"):
+                st.session_state.cur_lec = _i
+                st.session_state.page = "lecture"
+                save_progress(st.session_state.get("auth_email", ""))
+                st.rerun()
+
+    # ③ JS: 시각 도트 클릭 → 숨긴 버튼 클릭 연결 + 버튼 행 숨기기
+    components.html("""<script>
+(function() {
+    function init() {
+        var par = window.parent.document;
+        var dotsRow = par.getElementById('hyo-dots-row');
+        if (!dotsRow) { setTimeout(init, 80); return; }
+
+        // ⊙ 기호로 시작하는 버튼이 11개 있는 stHorizontalBlock 찾기
+        var blocks = par.querySelectorAll('[data-testid="stHorizontalBlock"]');
+        var btnBlock = null;
+        for (var j = 0; j < blocks.length; j++) {
+            var btns = blocks[j].querySelectorAll('button');
+            if (btns.length === 11) {
+                var txt = btns[0].textContent || btns[0].innerText || '';
+                if (txt.indexOf('\\u2299') >= 0) { // ⊙
+                    btnBlock = blocks[j];
+                    break;
+                }
+            }
+        }
+        if (!btnBlock) { setTimeout(init, 80); return; }
+
+        // 버튼 행 숨기기 (display:none 은 click() 가능)
+        btnBlock.style.cssText =
+            'position:fixed;top:-9999px;left:-9999px;' +
+            'width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;';
+
+        // 시각 도트와 숨긴 버튼 1:1 연결
+        var dots = dotsRow.querySelectorAll('.hyo-dot');
+        var hiddenBtns = btnBlock.querySelectorAll('button');
+        dots.forEach(function(dot, idx) {
+            dot.addEventListener('click', function() {
+                if (hiddenBtns[idx]) hiddenBtns[idx].click();
+            });
+        });
+    }
+    init();
+})();
+</script>""", height=0)
 
     # ── 상단 이전/현재/다음 내비 ──────────────
     nav_prev, nav_title, nav_next = st.columns([1, 4, 1])
