@@ -285,6 +285,42 @@ def increment_usage(email: str):
         pass
 
 
+def save_progress(email: str):
+    """학습 진도(quiz_done, cur_lec)를 Supabase에 저장."""
+    try:
+        sb = _get_supabase()
+        if sb and email and email not in ("local@dev", ""):
+            sb.table("progress").upsert({
+                "email": email,
+                "quiz_done": sorted(list(st.session_state.quiz_done)),
+                "cur_lec": int(st.session_state.cur_lec),
+            }).execute()
+    except Exception:
+        pass
+
+
+def load_progress(email: str):
+    """Supabase에서 학습 진도 로드 → session_state 갱신 (세션당 1회)."""
+    try:
+        sb = _get_supabase()
+        if sb and email and email not in ("local@dev", ""):
+            res = (
+                sb.table("progress")
+                .select("quiz_done,cur_lec")
+                .eq("email", email)
+                .execute()
+            )
+            if res.data:
+                row = res.data[0]
+                st.session_state.quiz_done = set(row.get("quiz_done") or [])
+                saved_lec = int(row.get("cur_lec") or 1)
+                # 저장된 강의 번호가 현재보다 앞서 있을 때만 복원
+                if st.session_state.cur_lec == 1 and saved_lec > 1:
+                    st.session_state.cur_lec = saved_lec
+    except Exception:
+        pass
+
+
 # ──────────────────────────────────────────────
 # 로그인 페이지
 # ──────────────────────────────────────────────
@@ -373,8 +409,8 @@ SYSTEM_PROMPT = """
 
 ## 2. 세효(世)와 응효(應)
 
-- **세효(世)** = 나 / 질문하는 사람
-- **응효(應)** = 상대방 / 외부환경
+- ≪세효(世)≫ = 나 / 질문하는 사람
+- ≪응효(應)≫ = 상대방 / 외부환경
 
 세효가 강하면 내가 주도권. 응효가 강하면 상황이 외부에 달려 있음.
 
@@ -396,21 +432,21 @@ SYSTEM_PROMPT = """
 
 동효 = 움직이는 효 = 진짜 사건이 일어나는 곳
 
-- 동효가 용신을 **생(生)** 하면 → 좋은 방향
-- 동효가 용신을 **극(克)** 하면 → 방해·문제
+- 동효가 용신을 ≪생(生)≫ 하면 → 좋은 방향
+- 동효가 용신을 ≪극(克)≫ 하면 → 방해·문제
 - 동효 없음 → 변화 없이 조용한 상태
 
-**동효의 강도 판단:**
+≪동효의 강도 판단≫:
 - 파란 글자(월령의 생·합)를 받은 동효 → 힘이 강함
 - 빨간 글자(일진의 생·합)를 받은 동효 → 힘이 강함
 
-**변효(變爻) 해석 원칙:**
+≪변효(變爻) 해석 원칙≫:
 - 변효는 오직 본효(동효)를 생하는지 극하는지만 분석
-- **회두생(回頭生)**: 변효가 본효를 생해줌 → 처음 힘들다가 결국 좋아짐
-- **회두극(回頭克)**: 변효가 본효를 극함 → 발등 찍히는 상황, 매우 나쁨
-- **본효가 변효를 극하는 경우**: 변효는 본효에 아무 영향 없음 (무시)
-- **진신(進神)**: 같은 오행의 더 강한 글자로 변함 → 기세가 점점 강해짐
-- **퇴신(退神)**: 같은 오행의 더 약한 글자로 변함 → 기세가 꺾임
+- ≪회두생(回頭生)≫: 변효가 본효를 생해줌 → 처음 힘들다가 결국 좋아짐
+- ≪회두극(回頭克)≫: 변효가 본효를 극함 → 발등 찍히는 상황, 매우 나쁨
+- ≪본효가 변효를 극하는 경우≫: 변효는 본효에 아무 영향 없음 (무시)
+- ≪진신(進神)≫: 같은 오행의 더 강한 글자로 변함 → 기세가 점점 강해짐
+- ≪퇴신(退神)≫: 같은 오행의 더 약한 글자로 변함 → 기세가 꺾임
 
 ## 5. 오행 상생·상극
 
@@ -441,7 +477,7 @@ SYSTEM_PROMPT = """
 각 효가 월건·일진과의 관계로 결정되는 생명 단계.
 이 단계로 해당 효가 현재 '힘이 넘치는지' vs '죽어가는지'를 판단한다.
 
-**6길신(吉神) — 힘이 있는 상태:**
+≪6길신(吉神) — 힘이 있는 상태≫:
 | 단계 | 한자 | 현실 번역 |
 |------|------|----------|
 | 養(양) | 태어나기 전 양육 | 준비·성장 직전, 아직 기회 있음 |
@@ -451,7 +487,7 @@ SYSTEM_PROMPT = """
 | 臨官(임관) | 직장 합격 | 관직·직장 합격·도전 성공 |
 | 帝旺(제왕) | 최전성기 | 가장 강함·주도권 완전 장악 |
 
-**6살신(殺神) — 힘이 약한 상태:**
+≪6살신(殺神) — 힘이 약한 상태≫:
 | 단계 | 한자 | 현실 번역 |
 |------|------|----------|
 | 衰(쇠) | 쇠퇴 시작 | 전성기 지남·서서히 힘 빠짐 |
@@ -489,13 +525,13 @@ SYSTEM_PROMPT = """
 | 庚·辛 | 金 | 결단력·냉정함·법적 공방·거래 |
 | 壬·癸 | 水 | 물밑 작업·비밀 계획·유연함·의심 |
 
-**특수 규칙:**
+≪특수 규칙≫:
 - 庚(경) + 문서효(父) = 소송·법적 분쟁 경고
 - 천간합(甲己·乙庚·丙辛·丁壬·戊癸): 겉은 싸우나 속으로 타협 중
 - 천간충(甲庚·乙辛·丙壬·丁癸·戊甲): 명분 충돌·명예 손상
 
-**지지 吉 + 천간 凶 조합**: 결과는 얻지만 과정이 힘들고 구설수 있음
-**천간 吉 + 지지 凶 조합**: 명분은 좋으나 실속이 없음
+≪지지 吉 + 천간 凶 조합≫: 결과는 얻지만 과정이 힘들고 구설수 있음
+≪천간 吉 + 지지 凶 조합≫: 명분은 좋으나 실속이 없음
 
 ## 10. 특수 괘 구조 — 판의 성격 진단
 
@@ -655,7 +691,7 @@ def call_gemini(uploaded_file, question: str, api_key: str, yongshin: str = "aut
     yongshin_hint = ""
     if yongshin != "auto":
         yongshin_hint = (
-            f"\n\n[중요] 용신(用神)을 질문자가 직접 지정했습니다: **{yongshin}**. "
+            f"\n\n[중요] 용신(用神)을 질문자가 직접 지정했습니다: ≪{yongshin}≫. "
             "이 육친을 용신으로 삼아 해석해주세요. "
             "용신 선택 이유 항목에도 '질문자 직접 지정'으로 명시해주세요."
         )
@@ -768,6 +804,7 @@ def show_quiz(lec_num: int) -> bool:
                         correct_count += 1
                 st.session_state[f"score_{lec_num}"] = correct_count
                 st.session_state.quiz_done.add(lec_num)
+                save_progress(st.session_state.get("auth_email", ""))
                 st.rerun()
         return False
 
@@ -973,42 +1010,52 @@ def page_lecture():
         unsafe_allow_html=True,
     )
 
-    # ── 진도 도트 ─────────────────────────────
+    # ── 진도 도트 (클릭 가능 · 한 줄) ───────────
     cur = st.session_state.cur_lec
     max_ok = _max_unlocked()
 
-    # 8강 이상은 심화과정 — 구분선 추가
-    dots_html = "<div style='display:flex;align-items:center;gap:4px;margin:4px 0 6px;flex-wrap:wrap;'>"
+    dots_html = (
+        "<div style='display:flex;align-items:center;gap:0;"
+        "flex-wrap:nowrap;overflow-x:auto;padding:4px 0 8px;'>"
+    )
     for i in range(1, 12):
-        # 8강 앞에 심화 구분 레이블
-        if i == 8:
-            dots_html += (
-                "<div style='width:100%;font-size:0.72rem;font-weight:700;"
-                "color:#6b7280;letter-spacing:0.08em;text-transform:uppercase;"
-                "margin:6px 0 4px;'>심화 과정</div>"
-            )
         if i in st.session_state.quiz_done:
-            bg, fg, symbol, bdr = "#ffd803", "#272343", "✓", "#272343"
+            bg, fg, bdr, symbol = "#ffd803", "#272343", "#272343", "✓"
         elif i == cur:
-            bg, fg, symbol, bdr = "#272343", "#ffd803", str(i), "#272343"
+            bg, fg, bdr, symbol = "#272343", "#ffd803", "#272343", str(i)
         elif i <= max_ok:
-            bg, fg, symbol, bdr = "#e3f6f5", "#272343", str(i), "#272343"
+            bg, fg, bdr, symbol = "#e3f6f5", "#272343", "#272343", str(i)
         else:
-            bg, fg, symbol, bdr = "#fffffe", "#9ca3af", str(i), "#d1d5db"
+            # 미학습 — 시각적으로 dim, 클릭은 허용
+            bg, fg, bdr, symbol = "#f3f4f6", "#c4c9d4", "#e0e4ed", str(i)
 
-        dot_size = "30px" if i >= 8 else "34px"
         dots_html += (
-            f"<div style='width:{dot_size};height:{dot_size};background:{bg};"
+            f"<a href='?goto_lec={i}' style='text-decoration:none;flex-shrink:0;'>"
+            f"<div style='width:28px;height:28px;background:{bg};"
             f"border:2px solid {bdr};border-radius:50%;"
             f"display:flex;align-items:center;justify-content:center;"
-            f"font-weight:700;font-size:0.75rem;color:{fg};flex-shrink:0;'>{symbol}</div>"
+            f"font-weight:700;font-size:0.7rem;color:{fg};cursor:pointer;' "
+            f"title='{i}강'>{symbol}</div>"
+            f"</a>"
         )
-        if i < 11 and i != 7:
-            line_color = "#272343" if i < max_ok else "#e5e7eb"
-            dots_html += (
-                f"<div style='flex:1;max-width:18px;height:2px;"
-                f"background:{line_color};'></div>"
-            )
+        if i < 11:
+            if i == 7:
+                # 기초↔심화 구분 — 인라인 구분자
+                dots_html += (
+                    "<div style='display:flex;align-items:center;flex-shrink:0;"
+                    "margin:0 4px;gap:2px;'>"
+                    "<div style='width:5px;height:1px;background:#d1d5db;'></div>"
+                    "<span style='font-size:0.55rem;color:#9ca3af;font-weight:700;"
+                    "white-space:nowrap;'>심화▷</span>"
+                    "<div style='width:5px;height:1px;background:#d1d5db;'></div>"
+                    "</div>"
+                )
+            else:
+                line_color = "#272343" if i < max_ok else "#e5e7eb"
+                dots_html += (
+                    f"<div style='width:10px;height:2px;"
+                    f"background:{line_color};flex-shrink:0;'></div>"
+                )
     dots_html += "</div>"
     st.markdown(dots_html, unsafe_allow_html=True)
 
@@ -1019,6 +1066,7 @@ def page_lecture():
         if cur > 1:
             if st.button("← 이전", key="nav_prev", use_container_width=True):
                 st.session_state.cur_lec -= 1
+                save_progress(st.session_state.get("auth_email", ""))
                 st.session_state.scroll_top = True
                 st.rerun()
     with nav_title:
@@ -1067,6 +1115,7 @@ def page_lecture():
                         key=f"next_lec_{cur}",
                     ):
                         st.session_state.cur_lec = cur + 1
+                        save_progress(st.session_state.get("auth_email", ""))
                         st.session_state.scroll_top = True
                         st.rerun()
                 else:
@@ -1134,9 +1183,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
         # 4. 용신 직접 지정 (optional)
         yongshin = "auto"
         with st.expander("⚙️ 용신 직접 지정 (선택사항)"):
-            st.caption("[육효의 세계]가 자동으로 선택합니다. 육효를 어느 정도 아신다면 직접 지정해 보세요.")
+            st.caption("자동으로 선택됩니다. 육효를 어느 정도 아신다면 직접 지정해 보세요.")
             yongshin_map = {
-                "[육효의 세계]가 자동 선택 (권장)": "auto",
+                "자동선택 (권장)": "auto",
                 "처재(妻財) — 재물 · 사업 · 연애(남성)": "財",
                 "관귀(官鬼) — 직장 · 승진 · 남편(여성) · 건강": "官",
                 "부모(父母) — 문서 · 시험 · 계약 · 부동산": "父",
@@ -1150,7 +1199,7 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
             )
             yongshin = yongshin_map[ys_label]
             if yongshin != "auto":
-                st.info(f"선택된 용신: **{yongshin}** — AI가 이 육친을 용신으로 해석합니다.")
+                st.info(f"선택된 용신: ≪{yongshin}≫ — 육효의 세계가 이 육친을 용신으로 해석합니다.")
 
         # 5. 사용량 초과 안내
         if auth_enabled and not is_owner and remaining == 0:
@@ -1193,8 +1242,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
         with st.spinner("🔮 육효를 해석하고 있습니다... (20~40초 소요)"):
             try:
                 result = call_gemini(uploaded, question.strip(), api_key, yongshin)
-                # ** 마커 제거 (텍스트만 남기고 볼드 기호 삭제)
+                # ** 마커 제거 — 쌍으로 된 것 먼저 제거, 남은 것 단순 삭제
                 result = re.sub(r'\*\*(.+?)\*\*', r'\1', result, flags=re.DOTALL)
+                result = result.replace('**', '')
                 # 성공 시 사용 횟수 증가
                 if auth_enabled and not is_owner:
                     increment_usage(email)
@@ -1250,6 +1300,23 @@ def main():
         email = "local@dev"
         is_owner = True
         remaining = 999
+
+    # ── 학습 진도 복원 (세션당 1회, DB → session_state) ─
+    if not st.session_state.get("progress_loaded"):
+        load_progress(email)
+        st.session_state["progress_loaded"] = True
+
+    # ── 도트 클릭 이동 (?goto_lec=N) ────────────
+    if "goto_lec" in st.query_params:
+        try:
+            n = int(st.query_params["goto_lec"])
+            if 1 <= n <= 11:
+                st.session_state.cur_lec = n
+                st.session_state.page = "lecture"
+        except (ValueError, TypeError):
+            pass
+        del st.query_params["goto_lec"]
+        st.rerun()
 
     inject_css()
     api_key = _get_api_key()
