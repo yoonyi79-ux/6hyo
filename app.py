@@ -8,7 +8,8 @@ import re
 import base64
 import json
 import urllib.parse
-from datetime import date
+from datetime import date, datetime
+import pytz
 from PIL import Image
 from dotenv import load_dotenv
 import httpx
@@ -233,6 +234,13 @@ def _get_supabase():
         return None
 
 
+_KST = pytz.timezone("Asia/Seoul")
+
+def _today_kst() -> str:
+    """한국 시간(KST) 기준 오늘 날짜 — YYYY-MM-DD."""
+    return datetime.now(_KST).date().isoformat()
+
+
 def get_today_count(email: str) -> int:
     """오늘 사용 횟수 반환 — session_state 캐시 우선."""
     cache_key = f"usage_{email}"
@@ -242,7 +250,7 @@ def get_today_count(email: str) -> int:
     try:
         sb = _get_supabase()
         if sb is not None and email:
-            today = date.today().isoformat()
+            today = _today_kst()
             res = (
                 sb.table("usage")
                 .select("count")
@@ -261,7 +269,7 @@ def increment_usage(email: str):
     """사용 횟수 +1 기록 (실패해도 앱은 계속 동작)."""
     try:
         sb = _get_supabase()
-        today = date.today().isoformat()
+        today = _today_kst()
         existing = (
             sb.table("usage")
             .select("count")
