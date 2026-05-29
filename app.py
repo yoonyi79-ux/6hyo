@@ -637,6 +637,10 @@ SYSTEM_PROMPT = """
 6. 개운(開運) 섹션은 반드시 실질적이고 행동 가능한 내용으로 작성
 
 7. 십이포태 단계는 해당 효마다 6길신/6살신 중 어느 쪽인지 명확히 판단
+
+8. ** 또는 __ 같은 마크다운 강조 기호를 절대 사용하지 않는다
+   굵게 표시가 필요한 경우 해당 단어 앞뒤에 ≪ ≫ 기호를 쓴다 (예: ≪관귀효≫)
+   단, 섹션 제목(## 【 】)은 그대로 유지한다
 """
 
 
@@ -783,9 +787,9 @@ def show_quiz(lec_num: int) -> bool:
 # ──────────────────────────────────────────────
 def _max_unlocked() -> int:
     unlocked = 1
-    for i in range(1, 8):
+    for i in range(1, 12):
         if i in st.session_state.quiz_done:
-            unlocked = min(i + 1, 7)
+            unlocked = min(i + 1, 11)
         else:
             break
     return unlocked
@@ -965,7 +969,7 @@ def page_lecture():
         "<div><div style='font-family:Montserrat,sans-serif;font-weight:800;"
         "font-size:1.1rem;color:#272343;'>육효의 모든 것</div>"
         "<div style='font-size:0.83rem;color:#2d334a;margin-top:2px;'>"
-        "기초부터 실전까지 — 7강으로 완성하는 육효 입문</div></div></div>",
+        "기초 7강 + 심화 4강 — 총 11강으로 완성하는 육효</div></div></div>",
         unsafe_allow_html=True,
     )
 
@@ -973,8 +977,16 @@ def page_lecture():
     cur = st.session_state.cur_lec
     max_ok = _max_unlocked()
 
-    dots_html = "<div style='display:flex;align-items:center;gap:5px;margin:4px 0 14px;'>"
-    for i in range(1, 8):
+    # 8강 이상은 심화과정 — 구분선 추가
+    dots_html = "<div style='display:flex;align-items:center;gap:4px;margin:4px 0 6px;flex-wrap:wrap;'>"
+    for i in range(1, 12):
+        # 8강 앞에 심화 구분 레이블
+        if i == 8:
+            dots_html += (
+                "<div style='width:100%;font-size:0.72rem;font-weight:700;"
+                "color:#6b7280;letter-spacing:0.08em;text-transform:uppercase;"
+                "margin:6px 0 4px;'>심화 과정</div>"
+            )
         if i in st.session_state.quiz_done:
             bg, fg, symbol, bdr = "#ffd803", "#272343", "✓", "#272343"
         elif i == cur:
@@ -984,16 +996,17 @@ def page_lecture():
         else:
             bg, fg, symbol, bdr = "#fffffe", "#9ca3af", str(i), "#d1d5db"
 
+        dot_size = "30px" if i >= 8 else "34px"
         dots_html += (
-            f"<div style='width:34px;height:34px;background:{bg};"
+            f"<div style='width:{dot_size};height:{dot_size};background:{bg};"
             f"border:2px solid {bdr};border-radius:50%;"
             f"display:flex;align-items:center;justify-content:center;"
-            f"font-weight:700;font-size:0.8rem;color:{fg};flex-shrink:0;'>{symbol}</div>"
+            f"font-weight:700;font-size:0.75rem;color:{fg};flex-shrink:0;'>{symbol}</div>"
         )
-        if i < 7:
+        if i < 11 and i != 7:
             line_color = "#272343" if i < max_ok else "#e5e7eb"
             dots_html += (
-                f"<div style='flex:1;max-width:24px;height:2px;"
+                f"<div style='flex:1;max-width:18px;height:2px;"
                 f"background:{line_color};'></div>"
             )
     dots_html += "</div>"
@@ -1047,7 +1060,7 @@ def page_lecture():
             st.divider()
             _, mid, _ = st.columns([2, 1, 2])
             with mid:
-                if cur < 7:
+                if cur < 11:
                     if st.button(
                         f"{cur + 1}강으로 →",
                         use_container_width=True,
@@ -1058,7 +1071,7 @@ def page_lecture():
                         st.rerun()
                 else:
                     st.success(
-                        "🎉 모든 강의를 완료했습니다! "
+                        "🎉 기초 7강 + 심화 4강을 모두 완료했습니다! "
                         "이제 직접 육효 이미지를 업로드해서 해석해보세요."
                     )
                     if st.button(
