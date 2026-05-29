@@ -706,9 +706,16 @@ def call_gemini(uploaded_file, question: str, api_key: str, yongshin: str = "aut
         contents=[image, user_text],
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            max_output_tokens=8192,
+            max_output_tokens=65536,
         ),
     )
+    # 잘림 감지 — finish_reason 이 MAX_TOKENS 이면 경고 추가
+    try:
+        reason = response.candidates[0].finish_reason
+        if hasattr(reason, "name") and reason.name == "MAX_TOKENS":
+            return response.text + "\n\n---\n⚠️ *응답이 최대 길이에 도달해 일부 내용이 생략되었을 수 있습니다.*"
+    except Exception:
+        pass
     return response.text
 
 
