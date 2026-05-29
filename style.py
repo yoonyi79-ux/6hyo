@@ -63,8 +63,31 @@ header[data-testid="stHeader"] {
   border-bottom: 2px solid var(--border) !important;
 }
 
-/* 헤더 우상단 툴바 전체 숨김 */
+/* ── Streamlit 내부 UI 전면 숨김 ── */
+
+/* 헤더 우상단 툴바 (햄버거·설정 아이콘) */
 [data-testid="stToolbar"] {
+  display: none !important;
+}
+
+/* 우하단 "Manage app" 배포 버튼 */
+[data-testid="stAppDeployButton"] {
+  display: none !important;
+}
+
+/* Streamlit 하단 푸터 ("Made with Streamlit") */
+footer {
+  display: none !important;
+}
+
+/* 상단 상태 위젯 (Running… 표시) */
+[data-testid="stStatusWidget"] {
+  display: none !important;
+}
+
+/* 우상단 프로필 배지 (구버전 호환) */
+.viewerBadge_container__r5tak,
+#stDecoration {
   display: none !important;
 }
 
