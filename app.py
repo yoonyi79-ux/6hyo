@@ -1059,17 +1059,17 @@ def page_lecture():
     dots_html += "</div>"
     st.markdown(dots_html, unsafe_allow_html=True)
 
-    # ② 숨긴 Streamlit 버튼 — 세션 유지 방식으로 강 이동
-    _hcols = st.columns(11, gap="small")
+    # ② 숨긴 Streamlit 버튼 — 컬럼 없이 단일 렌더링
+    # st.columns(11)을 쓰면 React가 page_main의 st.columns([3,2,3])와 동일한
+    # 자동 key를 공유해 이전 JS style이 재사용되어 버튼이 사라지는 버그 발생.
     for _i in range(1, 12):
-        with _hcols[_i - 1]:
-            if st.button(f"⊙{_i}", key=f"hbtn_{_i}"):
-                st.session_state.cur_lec = _i
-                st.session_state.page = "lecture"
-                save_progress(st.session_state.get("auth_email", ""))
-                st.rerun()
+        if st.button(f"⊙{_i}", key=f"hbtn_{_i}"):
+            st.session_state.cur_lec = _i
+            st.session_state.page = "lecture"
+            save_progress(st.session_state.get("auth_email", ""))
+            st.rerun()
 
-    # ③ JS: 시각 도트 클릭 → 숨긴 버튼 클릭 연결 + 버튼 행 숨기기
+    # ③ JS: ⊙ 버튼 컨테이너를 개별 숨김 + 도트와 1:1 연결
     components.html("""<script>
 (function() {
     function init() {
@@ -1077,32 +1077,23 @@ def page_lecture():
         var dotsRow = par.getElementById('hyo-dots-row');
         if (!dotsRow) { setTimeout(init, 80); return; }
 
-        // ⊙ 기호로 시작하는 버튼이 11개 있는 stHorizontalBlock 찾기
-        var blocks = par.querySelectorAll('[data-testid="stHorizontalBlock"]');
-        var btnBlock = null;
-        for (var j = 0; j < blocks.length; j++) {
-            var btns = blocks[j].querySelectorAll('button');
-            if (btns.length === 11) {
-                var txt = btns[0].textContent || btns[0].innerText || '';
-                if (txt.indexOf('\\u2299') >= 0) { // ⊙
-                    btnBlock = blocks[j];
-                    break;
-                }
+        // ⊙ 레이블 버튼 수집 + 각 stButton 컨테이너 개별 숨김
+        var hBtns = [];
+        par.querySelectorAll('button').forEach(function(btn) {
+            var txt = (btn.textContent || btn.innerText || '').trim();
+            if (txt.charCodeAt(0) === 0x2299) { // ⊙ 시작
+                var wrapper = btn.closest('[data-testid="stButton"]');
+                if (wrapper) wrapper.style.cssText = 'display:none;margin:0;padding:0;height:0;';
+                hBtns.push(btn);
             }
-        }
-        if (!btnBlock) { setTimeout(init, 80); return; }
-
-        // 버튼 행 숨기기 (display:none 은 click() 가능)
-        btnBlock.style.cssText =
-            'position:fixed;top:-9999px;left:-9999px;' +
-            'width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;';
+        });
+        if (hBtns.length < 11) { setTimeout(init, 80); return; }
 
         // 시각 도트와 숨긴 버튼 1:1 연결
         var dots = dotsRow.querySelectorAll('.hyo-dot');
-        var hiddenBtns = btnBlock.querySelectorAll('button');
         dots.forEach(function(dot, idx) {
             dot.addEventListener('click', function() {
-                if (hiddenBtns[idx]) hiddenBtns[idx].click();
+                if (hBtns[idx]) hBtns[idx].click();
             });
         });
     }
@@ -1211,8 +1202,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
             type=["png", "jpg", "jpeg", "webp"],
             label_visibility="collapsed",
         )
+        # 이미지 컬럼은 항상 렌더링 — 컬럼 자동 key를 안정적으로 유지
+        _, img_col, _ = st.columns([1, 2, 1])
         if uploaded:
-            _, img_col, _ = st.columns([1, 2, 1])
             with img_col:
                 st.image(uploaded, use_container_width=True)
 
