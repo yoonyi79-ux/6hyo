@@ -1134,9 +1134,9 @@ def page_main(api_key: str, auth_enabled: bool, email: str, is_owner: bool, rema
         # 4. 용신 직접 지정 (optional)
         yongshin = "auto"
         with st.expander("⚙️ 용신 직접 지정 (선택사항)"):
-            st.caption("AI가 자동으로 선택합니다. 육효를 어느 정도 아신다면 직접 지정해 보세요.")
+            st.caption("[육효의 세계]가 자동으로 선택합니다. 육효를 어느 정도 아신다면 직접 지정해 보세요.")
             yongshin_map = {
-                "AI가 자동 선택 (권장)": "auto",
+                "[육효의 세계]가 자동 선택 (권장)": "auto",
                 "처재(妻財) — 재물 · 사업 · 연애(남성)": "財",
                 "관귀(官鬼) — 직장 · 승진 · 남편(여성) · 건강": "官",
                 "부모(父母) — 문서 · 시험 · 계약 · 부동산": "父",
